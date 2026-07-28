@@ -1,12 +1,78 @@
 /**
- * Types partages du domaine produit.
- * Aligne sur supabase/migrations/20260727120000_initial_schema.sql.
- * Toute evolution du schema doit etre repercutee ici dans la meme PR.
+ * Types du domaine produit.
+ *
+ * Les types d'entites sont DERIVES du schema Drizzle (`lib/db/schema.ts`),
+ * jamais ecrits a la main : c'est ce qui garantit qu'ils ne peuvent pas
+ * diverger de la base. Ce fichier n'ajoute que ce que le schema ne peut pas
+ * exprimer : les unions litterales, les plafonds du template et les helpers.
  */
 
+import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
+import type {
+  artworkPantones,
+  artworkSpecs,
+  bomItems,
+  callouts,
+  colorSpecs,
+  extraReferences,
+  generatedVisuals,
+  measurementPoints,
+  measurementValues,
+  packagingSpecs,
+  productFlats,
+  products,
+  techpackRevisions,
+} from '@/lib/db/schema';
+
 // ---------------------------------------------------------------------------
-// Enumerations
+// Entites : lecture et insertion
 // ---------------------------------------------------------------------------
+
+export type Product = InferSelectModel<typeof products>;
+export type NewProduct = InferInsertModel<typeof products>;
+
+export type ProductFlat = InferSelectModel<typeof productFlats>;
+export type NewProductFlat = InferInsertModel<typeof productFlats>;
+
+export type MeasurementPoint = InferSelectModel<typeof measurementPoints>;
+export type NewMeasurementPoint = InferInsertModel<typeof measurementPoints>;
+
+export type MeasurementValue = InferSelectModel<typeof measurementValues>;
+export type NewMeasurementValue = InferInsertModel<typeof measurementValues>;
+
+export type BomItem = InferSelectModel<typeof bomItems>;
+export type NewBomItem = InferInsertModel<typeof bomItems>;
+
+export type Callout = InferSelectModel<typeof callouts>;
+export type NewCallout = InferInsertModel<typeof callouts>;
+
+export type ColorSpec = InferSelectModel<typeof colorSpecs>;
+export type NewColorSpec = InferInsertModel<typeof colorSpecs>;
+
+export type PackagingSpec = InferSelectModel<typeof packagingSpecs>;
+export type NewPackagingSpec = InferInsertModel<typeof packagingSpecs>;
+
+export type ArtworkSpec = InferSelectModel<typeof artworkSpecs>;
+export type NewArtworkSpec = InferInsertModel<typeof artworkSpecs>;
+
+export type ArtworkPantone = InferSelectModel<typeof artworkPantones>;
+export type NewArtworkPantone = InferInsertModel<typeof artworkPantones>;
+
+export type ExtraReference = InferSelectModel<typeof extraReferences>;
+export type NewExtraReference = InferInsertModel<typeof extraReferences>;
+
+export type GeneratedVisual = InferSelectModel<typeof generatedVisuals>;
+export type NewGeneratedVisual = InferInsertModel<typeof generatedVisuals>;
+
+export type TechpackRevision = InferSelectModel<typeof techpackRevisions>;
+export type NewTechpackRevision = InferInsertModel<typeof techpackRevisions>;
+
+// ---------------------------------------------------------------------------
+// Unions litterales
+// ---------------------------------------------------------------------------
+
+// Postgres ne stocke que du `text` avec une contrainte CHECK : ces listes sont
+// la contrepartie TypeScript, et doivent rester alignees sur les CHECK du schema.
 
 export const PRODUCT_CATEGORIES = ['shirt', 'pants', 'jacket', 'other'] as const;
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
@@ -29,6 +95,11 @@ export type PackagingType = (typeof PACKAGING_TYPES)[number];
 export const VISUAL_QUALITIES = ['low', 'medium', 'high'] as const;
 export type VisualQuality = (typeof VISUAL_QUALITIES)[number];
 
+export const BOM_CELL_LABELS = [
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+] as const;
+export type BomCellLabel = (typeof BOM_CELL_LABELS)[number];
+
 /** Orientation de la pointe du pin rouge (pages 5 et 6). */
 export type PinDirection = 'left' | 'right';
 
@@ -41,8 +112,9 @@ export type DimensionOrientation = 'horizontal' | 'vertical';
 
 /**
  * Le template a des emplacements en nombre fixe. Ces plafonds doivent etre
- * signales A LA SAISIE, jamais appliques silencieusement a la generation.
- * Voir .claude/docs/15-template-seaggs.md.
+ * signales A LA SAISIE, jamais appliques silencieusement a la generation :
+ * tronquer sans le dire fait disparaitre de l'information sans que personne
+ * le voie. Voir .claude/docs/15-template-seaggs.md.
  */
 export const TEMPLATE_LIMITS = {
   /** Lignes du tableau de specifications, page 3. */
@@ -61,7 +133,7 @@ export const TEMPLATE_LIMITS = {
 
 /**
  * Les 10 colonnes de tailles de la page 3 sont FIXES et toujours toutes
- * affichees. `size_range` ne determine pas les colonnes rendues, seulement
+ * affichees. `sizeRange` ne determine pas les colonnes rendues, seulement
  * lesquelles peuvent recevoir une valeur.
  */
 export const TECHPACK_SIZE_COLUMNS = [
@@ -70,232 +142,19 @@ export const TECHPACK_SIZE_COLUMNS = [
 export type TechpackSizeColumn = (typeof TECHPACK_SIZE_COLUMNS)[number];
 
 // ---------------------------------------------------------------------------
-// Positionnement
+// Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Toute position est stockee en pourcentage de la dimension NATURELLE de
- * l'image de fond (0-100), jamais en pixels. Un flat reexporte a une autre
- * resolution ne doit rien casser.
- */
-export interface PercentPoint {
-  x_percent: number;
-  y_percent: number;
-}
-
-/** Bloc place librement sur un canvas (pages 7, 8-9, 10-12). */
-export interface PercentPlacement extends Partial<PercentPoint> {
-  width_percent: number | null;
-}
-
-// ---------------------------------------------------------------------------
-// Entites
-// ---------------------------------------------------------------------------
-
-export interface Product {
-  id: string;
-  drop_number: number;
-  style_name: string;
-  style_number: string;
-  category: ProductCategory;
-  description: string | null;
-  main_fabric: string;
-  fabric_color_hex: string | null;
-  fabric_gradient_enabled: boolean;
-  fabric_gradient_intensity: GradientIntensity | null;
-  size_range: string[];
-  /**
-   * Taille de reference. Pilote trois rendus a la fois : l'encadre rouge du
-   * `SIZE RANGE:` dans le header, la colonne remplie page 3, et les valeurs
-   * affichees sur les cotes page 2. Nullable en base pour les brouillons,
-   * obligatoire dans le formulaire, bloquant pour la generation du techpack.
-   */
-  sample_size: string | null;
-  designer: string;
-  company: string;
-  /** Slot logo du header, present sur les 12 pages. PNG transparent ou SVG. */
-  logo_storage_path: string | null;
-  status: ProductStatus;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProductFlat {
-  id: string;
-  product_id: string;
-  type: FlatType;
-  storage_path: string;
-  /** Export du canvas (flat + annotations), ecrase a chaque export. */
-  overlay_storage_path: string | null;
-  label: string | null;
-  /** Placement de l'encart flottant sur la page 2. Uniquement pour `flat_detail`. */
-  x_percent: number | null;
-  y_percent: number | null;
-  width_percent: number | null;
-  created_at: string;
-}
-
-export interface MeasurementPoint {
-  id: string;
-  product_id: string;
-  flat_id: string;
-  /** "A", "B", "C"... auto-incremente a la creation, editable. */
-  point_label: string;
-  measurement_name: string;
-  x_percent: number;
-  y_percent: number;
-  /** Null sur un point simple, renseigne sur une ligne de cote. */
-  end_x_percent: number | null;
-  end_y_percent: number | null;
-  sort_order: number;
-  created_at: string;
-}
 
 /** Un point est une ligne de cote si et seulement si ses deux extremites sont definies. */
 export function isDimensionLine(
   point: MeasurementPoint,
-): point is MeasurementPoint & { end_x_percent: number; end_y_percent: number } {
-  return point.end_x_percent !== null && point.end_y_percent !== null;
+): point is MeasurementPoint & { endXPercent: number; endYPercent: number } {
+  return point.endXPercent !== null && point.endYPercent !== null;
 }
 
-export interface MeasurementValue {
-  id: string;
-  measurement_point_id: string;
-  size: string;
-  /** Toujours en pouces. Aucune conversion implicite vers le systeme metrique. */
-  value_inches: number;
-}
-
-export interface BomItem {
-  id: string;
-  product_id: string;
-  /** Position dans la grille 4x3 : "A" en haut a gauche, "L" en bas a droite. */
-  cell_label: string;
-  item_type: BomItemType | null;
-  title: string;
-  description: string | null;
-  pantone_id: string | null;
-  image_storage_path: string | null;
-  /** Rendu en cote rouge a cote de l'image, ex "1 inch". */
-  measurement_note: string | null;
-  created_at: string;
-}
-
-export interface Callout {
-  id: string;
-  product_id: string;
-  flat_id: string | null;
-  /** 1 a 12. */
-  number: number;
-  x_percent: number;
-  y_percent: number;
-  pin_direction: PinDirection;
-  description: string;
-  created_at: string;
-}
-
-export interface ColorSpec {
-  id: string;
-  product_id: string;
-  flat_id: string | null;
-  /** 1 a 6. */
-  number: number;
-  name: string;
-  /** Alimente le carre de couleur de la legende. */
-  hex: string | null;
-  /** Affiche en priorite sur `name` s'il existe. */
-  pantone_id: string | null;
-  x_percent: number | null;
-  y_percent: number | null;
-  pin_direction: PinDirection;
-  created_at: string;
-}
-
-export interface PackagingSpec {
-  id: string;
-  product_id: string;
-  type: PackagingType | null;
-  title: string;
-  image_storage_path: string | null;
-  width_inches: number | null;
-  height_inches: number | null;
-  pantone_id: string | null;
-  pantone_hex: string | null;
-  notes: string | null;
-  x_percent: number | null;
-  y_percent: number | null;
-  width_percent: number | null;
-  dimension_orientation: DimensionOrientation;
-  created_at: string;
-}
-
-export interface ArtworkPantone {
-  id: string;
-  artwork_spec_id: string;
-  pantone_id: string;
-  hex: string | null;
-  sort_order: number;
-}
-
-export interface ArtworkSpec {
-  id: string;
-  product_id: string;
-  flat_id: string | null;
-  /** 8 ou 9. */
-  page: number;
-  title: string;
-  technique: string | null;
-  width_inches: number | null;
-  height_inches: number | null;
-  position_note: string | null;
-  /**
-   * Fond de la vignette. Indispensable pour une impression blanche, invisible
-   * sinon sur le fond blanc de la page.
-   */
-  background_hex: string | null;
-  x_percent: number | null;
-  y_percent: number | null;
-  width_percent: number | null;
-  created_at: string;
-}
-
-export interface ExtraReference {
-  id: string;
-  product_id: string;
-  /** 10, 11 ou 12. */
-  page: number;
-  title: string | null;
-  instruction_text: string | null;
-  image_storage_path: string | null;
-  x_percent: number | null;
-  y_percent: number | null;
-  width_percent: number | null;
-  created_at: string;
-}
-
-export interface GeneratedVisual {
-  id: string;
-  product_id: string;
-  prompt_used: string;
-  quality: VisualQuality | null;
-  storage_path: string;
-  /** Sans contrainte de cle etrangere : l'historique survit a la suppression d'un flat. */
-  input_flat_ids: string[] | null;
-  cost_usd: number | null;
-  created_at: string;
-}
-
-export interface TechpackRevision {
-  id: string;
-  product_id: string;
-  version: number;
-  /** Colonne HISTORY: du tableau page 1, ex "REV 2". */
-  history_label: string | null;
-  /** Colonne PAGES:, ex "2, 3, 6". */
-  pages_affected: string | null;
-  summary: string | null;
-  pdf_storage_path: string | null;
-  created_at: string;
+/** URL publique d'un fichier du stockage local, servie a la meme origine que l'app. */
+export function fileUrl(storagePath: string): string {
+  return `/api/files/${storagePath}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,12 +168,12 @@ export interface TechpackRevision {
  */
 export interface FullProduct extends Product {
   flats: ProductFlat[];
-  measurement_points: (MeasurementPoint & { values: MeasurementValue[] })[];
-  bom_items: BomItem[];
+  measurementPoints: (MeasurementPoint & { values: MeasurementValue[] })[];
+  bomItems: BomItem[];
   callouts: Callout[];
-  color_specs: ColorSpec[];
-  packaging_specs: PackagingSpec[];
-  artwork_specs: (ArtworkSpec & { pantones: ArtworkPantone[] })[];
-  extra_references: ExtraReference[];
-  techpack_revisions: TechpackRevision[];
+  colorSpecs: ColorSpec[];
+  packagingSpecs: PackagingSpec[];
+  artworkSpecs: (ArtworkSpec & { pantones: ArtworkPantone[] })[];
+  extraReferences: ExtraReference[];
+  techpackRevisions: TechpackRevision[];
 }

@@ -16,7 +16,7 @@
 2. Le backend récupère **toutes** les données du produit en une passe, via `getFullProduct(productId)`
 3. Chaque page est un composant React de `components/techpack/templates/` qui reçoit les données en props
 4. Le HTML complet est rendu, puis transformé en PDF par Puppeteer
-5. Le PDF est stocké dans Supabase Storage, une ligne `techpack_revisions` est créée avec `version = max(version) + 1`
+5. Le PDF est stocké sur le système de fichiers local, une ligne `techpack_revisions` est créée avec `version = max(version) + 1`
 6. Téléchargement direct depuis l'interface
 
 ## Les 12 pages

@@ -33,7 +33,7 @@ La règle qui sous-tend tout : **une donnée saisie une fois est réutilisée pa
 
 Jay, seul, en usage interne Constitue. Conséquences concrètes :
 
-- Auth = email/password Supabase, rien de plus
+- Pas d'auth pour l'instant : outil personnel qui tourne en local. Bloquant avant tout déploiement public.
 - Pas de `organization_id` ni de scoping multi-tenant dans le schéma
 - Pas besoin de gérer les conflits d'édition concurrente
 - L'UX peut être dense et technique, l'utilisateur connaît son domaine

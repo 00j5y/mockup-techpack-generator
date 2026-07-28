@@ -4,7 +4,7 @@ Une phase = une branche = un merge vers `main`. Voir `11-git-workflow.md`.
 
 | Phase | Branche suggérée | Contenu | Livrable |
 |---|---|---|---|
-| **0** | `feature/bootstrap` | Setup Next.js + Supabase + Docker + schéma DB complet + auth | Repo bootable, DB créée |
+| **0** | `feature/bootstrap` | Setup Next.js + Postgres Docker + Drizzle + stockage local + pipeline PDF | Repo bootable, DB créée |
 | **1** | `feature/product-crud` | CRUD produit + upload flats | Créer/éditer un produit, uploader ses flats |
 | **2** | `feature/measurement-canvas` | Éditeur de mesures | Poser des points, saisir les valeurs, exporter l'overlay |
 | **3** | `feature/bom-and-specs` | BOM / Colors / Packaging / Artwork / Callouts / Extra | Formulaires CRUD complets |
@@ -25,12 +25,12 @@ La **Phase 5 est indépendante** des Phases 2, 3 et 4 : elle ne dépend que des 
 
 - [ ] `bun create next-app` avec TypeScript strict, App Router, Tailwind
 - [ ] `tsconfig.json` : `strict: true`, pas de `skipLibCheck` complaisant
-- [ ] Projet Supabase créé, `.env.local` renseigné (voir `13-env-setup.md`)
+- [ ] Postgres lancé (`bun run db:up`), `.env.local` renseigné (voir `13-env-setup.md`)
 - [ ] Migration initiale contenant **tout** le schéma de `03-database.md`, y compris index, trigger `updated_at`, RLS **et les 8 corrections issues du template**
 - [ ] Police Source Sans 3 (ou substitut validé) ajoutée localement au projet, pas via CDN
 - [ ] Buckets Storage créés, politique CORS vérifiée pour l'export canvas
 - [ ] Auth email/password fonctionnelle, middleware de protection des routes `(dashboard)`
-- [ ] `types/product.ts` généré depuis le schéma Supabase
+- [ ] `types/product.ts` dérivé du schéma Drizzle via `InferSelectModel`
 - [ ] `Dockerfile` + `docker-compose.yml`, **avec Chromium pour Puppeteer** dès maintenant (ne pas découvrir le problème en Phase 4)
 - [ ] Le build Docker passe et l'app répond
 - [ ] `.gitignore` correct (`.env*`, `node_modules`, `.next`)

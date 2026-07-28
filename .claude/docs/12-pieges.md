@@ -13,7 +13,7 @@ Si l'un de ces cas se produit, **s'arrêter et corriger**, pas contourner :
 | Je stocke une position en pixels | Le flat réexporté cassera tout |
 | Je construis un second éditeur canvas pour les callouts | La Phase 2 a été mal découpée |
 | `AnnotatedCanvas` contient le mot "measurement" | La primitive n'est pas générique, les 5 autres pages qui en dépendent vont dupliquer du code |
-| `buildImagePrompt` a besoin d'un client Supabase | La fonction n'est plus pure, donc plus testable sans coût |
+| `buildImagePrompt` a besoin d'un accès base | La fonction n'est plus pure, donc plus testable sans coût |
 | Je code une page de techpack en flexbox ou grid fluide | Le template est un document Illustrator en positions absolues, les coordonnées sont connues au point près |
 
 ## Pièges spécifiques au template Seaggs
@@ -75,11 +75,19 @@ Trois espaces de coordonnées coexistent dans l'éditeur :
 
 Les pourcentages stockés en base se réfèrent **toujours à l'espace naturel de l'image**. Mélanger les référentiels produit un bug invisible en édition et catastrophique à l'export PDF. Centraliser la conversion dans un helper testé, ne jamais la faire inline.
 
-### Le canvas "tainted"
+### Le canvas "tainted" : neutralisé, mais à ne pas réintroduire
 
-`stage.toDataURL()` lève une `SecurityError` si une image du canvas vient d'une origine sans en-tête CORS approprié. Symptôme trompeur : tout marche en dev avec des images locales, l'export casse avec les images Supabase.
+`stage.toDataURL()` lève une `SecurityError` si une image du canvas vient d'une origine sans en-tête CORS approprié. C'était le principal risque de la Phase 2, avec un symptôme trompeur : tout marche en dev avec des images locales, l'export casse avec les images distantes.
 
-À vérifier **le premier jour de la Phase 2** : charger un flat depuis Supabase Storage avec `crossOrigin = 'anonymous'` et tenter un `toDataURL`. Si ça échoue, ajuster la config du bucket avant d'écrire le reste du module.
+**Ce risque a disparu en Phase 0.** Les fichiers sont servis par `/api/files/[...path]`, donc à la même origine que l'application : il n'y a plus d'origine tierce à contaminer le canvas. C'est le bénéfice principal de la sortie de Supabase Storage.
+
+Ce qui le ferait revenir, et qu'il faut donc refuser :
+
+- servir les flats depuis un CDN, un bucket S3, ou n'importe quel autre domaine
+- utiliser une URL absolue vers un autre hôte dans le `Konva.Image`
+- passer par un service de transformation d'image tiers
+
+Si un jour le stockage doit migrer vers un objet distant, ce piège redevient actif et il faudra le retester **avant** d'écrire quoi que ce soit d'autre.
 
 ### L'UI dans l'export
 
@@ -116,12 +124,14 @@ Une police chargée depuis une CDN externe qui ne répond pas dans le conteneur 
 
 `page-break-after: always` sur le dernier élément génère une page blanche finale. Utiliser `:last-child { page-break-after: auto }`.
 
-## Supabase
+## Base de données et stockage
 
-- **Deux clients distincts.** `service_role` uniquement côté serveur. Une clé `service_role` dans un fichier importé par un Client Component finit dans le bundle navigateur.
-- **RLS activée dès le départ.** Une table Supabase sans RLS est lisible par n'importe qui avec la clé anon (qui est publique par nature).
-- **Cascade de suppression.** Supprimer un flat cascade sur `measurement_points`, `callouts` et `artwork_specs`. Avertir explicitement l'utilisateur du nombre d'éléments qui seront perdus, pas juste "Êtes-vous sûr ?".
-- **Fichiers orphelins.** Supprimer une ligne en base ne supprime pas le fichier dans Storage. Prévoir la suppression du fichier dans la même opération, sinon le bucket accumule des orphelins.
+- **`lib/db` est serveur uniquement.** `DATABASE_URL` contient le mot de passe de la base. Un import depuis un fichier atteint par un Client Component la ferait fuiter dans le bundle. Même règle pour `lib/storage`.
+- **Cascade de suppression.** Supprimer un flat cascade sur `measurement_points` et `callouts`, et met à `null` le `flat_id` de `color_specs` et `artwork_specs`. Avertir explicitement du nombre d'éléments perdus, pas juste "Êtes-vous sûr ?".
+- **Fichiers orphelins.** Supprimer une ligne en base ne supprime pas le fichier sur disque. Appeler `deleteFile()` dans la même opération, sinon `.storage/` accumule des orphelins que rien ne référence.
+- **Une variable d'environnement vide n'est pas absente.** `STORAGE_DIR=` dans un `.env` donne une chaîne vide, que `??` laisse passer : le stockage se retrouve alors à la racine du projet. Utiliser `process.env.X?.trim() || defaut`. Ce bug est déjà arrivé en Phase 0.
+- **drizzle-kit ne voit pas les variables chargées par Bun.** Il évalue `drizzle.config.ts` dans un sous-processus Node. D'où le `dotenv` explicite dans le fichier de config. Sans lui : `url: undefined`.
+- **Ne jamais modifier la base à la main.** Toute évolution passe par `lib/db/schema.ts`, puis `bun run db:generate`, puis `bun run db:migrate`. Le SQL de `drizzle/` est généré et committé, jamais édité.
 
 ## Auto-save
 

@@ -1,6 +1,8 @@
-# 03 - Modèle de données (Supabase / Postgres)
+# 03 - Modèle de données (Postgres)
 
-Schéma de référence. Toute modification passe par une migration versionnée dans `supabase/migrations/`, jamais par un changement à la main dans le dashboard Supabase.
+Schéma de référence **métier**. L'implémentation fait autorité : le schéma vit dans `lib/db/schema.ts` (Drizzle), qui génère à la fois les migrations SQL de `drizzle/` et les types de `types/product.ts`.
+
+Ce fichier explique le *pourquoi* de chaque table et de chaque contrainte. Le SQL ci-dessous est celui de la spec initiale, conservé pour la lecture : ne jamais l'appliquer à la main, toute évolution passe par `lib/db/schema.ts` puis `bun run db:generate`.
 
 > **Le schéma initial ci-dessous est incomplet.** L'analyse du template Seaggs a révélé 8 manques. Ils sont détaillés en fin de fichier, section "Corrections issues du template". La migration de Phase 0 doit inclure le schéma de base **et** ces corrections.
 
@@ -34,7 +36,7 @@ create table product_flats (
   id uuid primary key default gen_random_uuid(),
   product_id uuid references products(id) on delete cascade,
   type text not null check (type in ('flat_front', 'flat_back', 'flat_detail', 'inspo_reference')),
-  storage_path text not null,          -- chemin Supabase Storage
+  storage_path text not null,          -- chemin relatif dans le stockage local
   label text,                          -- ex: "Manche détail" pour les flat_detail
   created_at timestamptz default now()
 );
@@ -241,17 +243,13 @@ create trigger products_updated_at
   for each row execute function set_updated_at();
 ```
 
-### RLS
+### RLS : sans objet depuis la sortie de Supabase
 
-Mono-utilisateur, mais RLS activé quand même sur toutes les tables (une base Supabase sans RLS est publiquement lisible avec la clé anon) :
+La spec initiale imposait la RLS parce qu'une base Supabase est jointe directement par le navigateur avec une clé publique : sans RLS, tout est lisible par n'importe qui.
 
-```sql
-alter table products enable row level security;
--- idem sur toutes les tables
+Ce n'est plus le modèle. Postgres n'est jamais joint depuis le navigateur : il n'écoute que sur le réseau Docker, et seul le serveur Next.js s'y connecte. La surface d'attaque est l'application, pas la base.
 
-create policy "authenticated full access" on products
-  for all to authenticated using (true) with check (true);
-```
+**La conséquence est déplacée, pas supprimée** : la protection repose désormais entièrement sur l'application, qui n'a pas d'auth pour l'instant. Tant que ça tourne en local, sans conséquence. Avant tout déploiement public, il faut une auth : voir le bloquant dans `PROGRESS.md`.
 
 ### Champ overlay de mesures
 

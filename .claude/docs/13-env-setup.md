@@ -5,7 +5,7 @@
 `.env.local` (jamais committé). Un `.env.example` avec les mêmes clés mais des valeurs vides **est** committé.
 
 ```bash
-# Supabase
+# Base de donnees
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=        # serveur uniquement, JAMAIS de préfixe NEXT_PUBLIC_
@@ -27,16 +27,19 @@ Règle : toute variable **sans** préfixe `NEXT_PUBLIC_` est inaccessible côté
 
 ```bash
 bun install
+cp .env.example .env.local   # les valeurs par defaut suffisent en local
+bun run db:up                # lance Postgres dans Docker
+bun run db:migrate           # applique les migrations
 bun run dev
 ```
 
-Base de données : appliquer les migrations de `supabase/migrations/` sur le projet Supabase. Ne pas modifier le schéma à la main dans le dashboard : toute évolution passe par un fichier de migration versionné.
+**Ne jamais modifier le schéma à la main.** Le cycle est : éditer `lib/db/schema.ts`, puis `bun run db:generate` (produit un fichier SQL dans `drizzle/`, à committer), puis `bun run db:migrate`.
 
-## Buckets Supabase Storage
+## Stockage des fichiers
 
-À créer en Phase 0 :
+Système de fichiers local, via `lib/storage`. `.storage/` en dev, volume Docker `storage-data` en production. Arborescence :
 
-| Bucket / préfixe | Contenu |
+| Chemin | Contenu |
 |---|---|
 | `products/{id}/flats/` | Flats techniques et photos d'inspo |
 | `products/{id}/overlays/` | Exports canvas (flat + annotations de mesure) |
@@ -44,12 +47,23 @@ Base de données : appliquer les migrations de `supabase/migrations/` sur le pro
 | `products/{id}/packaging/` | Images de tags et packaging |
 | `products/{id}/artwork/` | Fichiers d'artwork |
 | `products/{id}/extra/` | Images de références libres |
+| `products/{id}/logo/` | Logo du header |
 | `products/{id}/visuals/` | Visuels générés par IA |
 | `products/{id}/techpacks/` | PDFs générés |
 
-**Décision à prendre en Phase 0** : bucket public ou privé avec URLs signées.
+Les fichiers sont servis par `/api/files/[...path]`, donc **à la même origine que l'application**. C'est ce qui élimine le problème de canvas *tainted* de la Phase 2 : plus aucune image ne vient d'une origine tierce.
 
-Contrainte à intégrer dans la décision : l'export canvas de la Phase 2 exige que les images de flats soient chargeables **sans problème CORS** (`crossOrigin = 'anonymous'`), sinon `toDataURL` échoue. Tester ce cas concret avant de figer le choix. Le plus simple qui fonctionne : bucket public pour les flats, privé pour les PDFs et visuels générés.
+`lib/storage` valide le type MIME, plafonne à 25 Mo, et **refuse tout chemin sortant de la racine de stockage**. Les chemins viennent de la base ou d'une requête : ils sont à traiter comme non fiables.
+
+## Sauvegardes
+
+La base est auto-hébergée, donc les sauvegardes sont notre responsabilité. À mettre en place avant toute utilisation sérieuse :
+
+```bash
+docker compose exec -T db pg_dump -U constitue constitue_studio | gzip > sauvegarde-$(date +%F).sql.gz
+```
+
+Le dossier de stockage se sauvegarde séparément : c'est un simple volume de fichiers.
 
 ## Docker
 

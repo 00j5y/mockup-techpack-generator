@@ -30,7 +30,7 @@ Repo : `git@github.com:00j5y/mockup-techpack-generator.git`
 - **TypeScript strict** partout. Pas de `any` non justifié par un commentaire.
 - **Commentaires de code en français.** Noms de variables, fonctions, types en anglais.
 - **Pas de caractère em dash** (`—`) dans les fichiers de doc, README et textes rédigés. Utiliser `:`, `,`, `-`, `→` ou des parenthèses.
-- Types partagés dans `types/product.ts`, générés/alignés sur le schéma Supabase.
+- Types partagés dans `types/product.ts`, **dérivés du schéma Drizzle** (`lib/db/schema.ts`), jamais écrits à la main.
 - Auto-save des formulaires (debounce 1s), pas de bouton "Enregistrer" explicite.
 
 ## Index de la documentation

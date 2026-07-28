@@ -48,3 +48,6 @@ next-env.d.ts
 
 # test de fumee PDF
 /.smoke
+
+# stockage local des fichiers (dev)
+/.storage

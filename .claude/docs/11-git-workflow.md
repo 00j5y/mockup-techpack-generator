@@ -52,6 +52,6 @@ Ensuite seulement : demander à Jay s'il veut push + PR, et attendre sa réponse
 ## Ce qui ne va jamais dans le repo
 
 - `.env`, `.env.local`, toute variante contenant des clés
-- Clés Supabase `service_role`, clé OpenAI
-- PDFs générés, images générées (ils vivent dans Supabase Storage)
+- Chaîne de connexion Postgres, clé OpenAI
+- PDFs générés, images générées, uploads (ils vivent dans `.storage/`, ignoré)
 - `node_modules`, `.next`, artefacts de build
