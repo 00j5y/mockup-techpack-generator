@@ -47,7 +47,24 @@ git checkout -b feature/nom-de-la-feature
 - [ ] `.claude/PROGRESS.md` est à jour
 - [ ] Relecture de code effectuée
 
-Ensuite seulement : demander à Jay s'il veut push + PR, et attendre sa réponse.
+## Fin de phase : la recette de Jay
+
+Les vérifications ci-dessus sont les miennes, automatiques. Elles ne prouvent pas que le produit est utilisable. **À chaque fin de phase, remettre à Jay la liste de ce qu'il doit tester lui-même**, puis attendre sa confirmation avant tout push et toute PR.
+
+Ce que cette liste doit contenir :
+
+- **Des commandes à copier-coller**, dans l'ordre, avec le résultat attendu à côté
+- **Ce que seul un œil humain peut juger** : est-ce que le PDF ressemble au template, est-ce que le formulaire est agréable, est-ce que le débordement de texte se voit
+- **Les cas limites qui font mal** : coupure réseau pendant un auto-save, fichier trop gros, valeur hors plafond
+
+Ce qu'elle ne doit pas contenir :
+
+- `typecheck`, `lint`, `build` : c'est mon travail, déjà fait, et le lui faire refaire ne lui apprend rien
+- Des vérifications que j'ai déjà exécutées et dont je rapporte la sortie
+
+Format attendu : une case à cocher par test, la commande, puis ce qu'il doit voir. Signaler explicitement ce que je **n'ai pas pu** tester moi-même et pourquoi.
+
+Ensuite seulement, et seulement s'il confirme : `git push -u origin <branche>` puis ouverture de la PR.
 
 ## Ce qui ne va jamais dans le repo
 

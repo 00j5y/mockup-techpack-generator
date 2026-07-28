@@ -103,6 +103,23 @@ Les halos de sélection, poignées de drag, curseurs et grilles d'aide font part
 
 Le piège classique : Puppeteer marche en local (il télécharge son Chromium), et casse dans le conteneur (dépendances système absentes). Installer Chromium et ses libs **dès la Phase 0** dans le Dockerfile, et vérifier que le build Docker passe, même si la génération PDF n'est codée qu'en Phase 4.
 
+### Le nom de la variable de skip a changé
+
+`PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` est l'ancien nom, abandonné depuis la v20. Depuis, c'est **`PUPPETEER_SKIP_DOWNLOAD`**. L'ancien est ignoré **en silence** : le postinstall tente le téléchargement et le build Docker casse sur l'absence d'`unzip`. Déjà rencontré en Phase 0.
+
+Piège aggravant : `bun` bloque les postinstall par défaut, donc l'erreur reste invisible jusqu'au jour où quelqu'un fait `bun pm trust`. N'autoriser que les paquets qui en ont besoin, jamais `--all`.
+
+### La sortie standalone ne trace que ce que le code importe
+
+`output: 'standalone'` n'embarque dans `node_modules` que les paquets réellement atteints depuis le code de l'app. En Phase 0, l'image ne contient ni `drizzle-orm`, ni `postgres`, ni `puppeteer`, simplement parce qu'aucune page ne les importe encore.
+
+Ce n'est pas un bug, mais **deux vérifications en découlent** :
+
+- **Phase 1** : dès qu'une page importe `lib/db`, vérifier que `drizzle-orm` et `postgres` arrivent bien dans l'image, et que l'app interroge la base depuis le conteneur.
+- **Phase 4** : `puppeteer` est déclaré dans `serverExternalPackages`, donc non bundlé. Vérifier que le traçage le copie quand même dans l'image. Si ce n'est pas le cas, il faudra le copier explicitement dans le Dockerfile.
+
+Ne pas supposer que ça marchera : le tester.
+
 ### Images non chargées
 
 `page.pdf()` ne garantit pas que les images sont rendues. Un `waitUntil: 'networkidle0'` peut suffire, souvent pas. Ajouter :

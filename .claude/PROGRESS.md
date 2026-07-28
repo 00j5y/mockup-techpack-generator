@@ -36,10 +36,13 @@ Légende : ⬜ pas commencé, 🟡 en cours, ✅ terminé et mergé
 - [x] `bun run typecheck`, `bun run lint`, `bun run build` passent
 - [x] Image Docker construite, app servie en HTTP 200 sans erreur au log
 
+- [x] **Stack complet `docker compose`** : app + db ensemble, page en 200, `/api/files` répond 404 sur fichier absent, `DATABASE_URL` pointe bien sur le service `db`, Chromium présent dans l'image app, 13 tables en base
+
 ### Reste à faire
 
-- [ ] Rejouer le test de fumée PDF depuis `docker compose` complet (app + db ensemble)
 - [ ] `pg_dump` en cron, avant toute utilisation sérieuse
+- [ ] **Phase 1** : vérifier que `drizzle-orm` et `postgres` entrent dans l'image standalone dès qu'une page importe `lib/db` (Next ne trace que ce que le code atteint : ils n'y sont pas encore)
+- [ ] **Phase 4** : vérifier que `puppeteer`, déclaré en `serverExternalPackages`, est bien copié dans l'image standalone
 
 **La Phase 0 n'a plus de bloquant externe.** Plus de compte tiers à créer, tout tourne en local.
 

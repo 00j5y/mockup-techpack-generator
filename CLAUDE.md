@@ -17,7 +17,7 @@ Repo : `git@github.com:00j5y/mockup-techpack-generator.git`
 3. **Aucun appel IA payant sans review humaine du prompt.** Le prompt est toujours affiché et éditable avant envoi. Pas de génération automatique, jamais.
 4. **Séparation prompt / appel API.** `lib/prompt/` construit le texte, `lib/openai/` fait l'appel. On doit pouvoir tester la construction du prompt sans dépenser un centime.
 5. **Jamais de commit direct sur `main`.** Une branche par phase ou sous-phase. Voir `.claude/docs/11-git-workflow.md`.
-6. **Jamais de `git push` ni d'ouverture de PR sans accord explicite de Jay.**
+6. **Jamais de `git push` ni d'ouverture de PR sans accord explicite de Jay.** À chaque fin de phase : lui remettre la **liste de ce qu'il doit tester lui-même**, attendre sa confirmation, et seulement ensuite push + PR. Voir `.claude/docs/11-git-workflow.md`.
 7. **La fidélité visuelle du PDF est le critère de succès** du module techpack. Un PDF fonctionnel mais mal mis en page = module non livré. Comparaison page par page contre `.claude/docs/template-reference/exemple-p-NN.jpg`.
 8. **Pas de sur-ingénierie pour le hors-scope.** Voir `.claude/docs/14-hors-scope.md` avant d'ajouter une abstraction "au cas où".
 9. **Le techpack est en paysage `761.4 x 581.4 pt` et fait toujours 12 pages**, y compris vides. Ni A4, ni Letter, ni portrait, ni pagination dynamique. Géométrie mesurée dans `.claude/docs/15-template-seaggs.md`.
