@@ -107,6 +107,20 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Point de montage du volume de stockage, cree AVANT le montage et possede par
+# l'utilisateur applicatif.
+#
+# Docker reprend le proprietaire du dossier de l'image au moment ou il cree le
+# volume nomme. Sans ce mkdir, le point de montage appartient a root, et
+# l'application, qui tourne en `nextjs`, echoue en EACCES au premier upload.
+# Rencontre en Phase 1 : le build passait, l'app repondait 200, et seul un vrai
+# upload revelait le probleme.
+#
+# Attention : un volume deja cree garde son proprietaire d'origine. Sur une
+# stack existante il faut le supprimer :
+#   docker compose down && docker volume rm <projet>_storage-data
+RUN mkdir -p /app/storage && chown nextjs:nodejs /app/storage
+
 USER nextjs
 ENV HOME=/home/nextjs
 

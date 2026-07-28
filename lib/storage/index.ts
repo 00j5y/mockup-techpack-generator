@@ -12,6 +12,11 @@
  * Cote serveur uniquement.
  */
 
+// Fait echouer le BUILD si un Client Component atteint ce module. Meme raison
+// que dans `lib/db/index.ts` : la frontiere serveur ne doit pas dependre du
+// seul mot-cle `type` a l'import.
+import 'server-only';
+
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
@@ -137,6 +142,44 @@ export async function fileExists(relativePath: string): Promise<boolean> {
  */
 export async function deleteFile(relativePath: string): Promise<void> {
   await rm(resolveInsideRoot(relativePath), { force: true });
+}
+
+/**
+ * Duplique un fichier vers un nouveau chemin sous le meme produit.
+ *
+ * Sert au pre-remplissage du logo : le formulaire de creation reprend le
+ * `logo_storage_path` du produit le plus recent, donc deux produits
+ * pointeraient sur le MEME fichier. Supprimer le premier produit effacerait
+ * alors le logo du second. Chaque produit possede ses propres fichiers.
+ */
+export async function copyIntoProduct(
+  sourcePath: string,
+  productId: string,
+  folder: string,
+): Promise<string> {
+  const data = await getFile(sourcePath);
+  return putFile(buildPath(productId, folder, extname(sourcePath).toLowerCase()), data);
+}
+
+/** Vrai si le chemin appartient bien au dossier de ce produit. */
+export function belongsToProduct(relativePath: string, productId: string): boolean {
+  return relativePath.startsWith(`products/${productId}/`);
+}
+
+/**
+ * Supprime un dossier et son contenu. Silencieux s'il n'existe pas.
+ *
+ * Appele a la suppression d'un produit : sans ca, tout `products/<uuid>/`
+ * resterait sur le volume sans qu'aucune ligne ne le reference.
+ */
+export async function deleteDirectory(relativePath: string): Promise<void> {
+  const absolute = resolveInsideRoot(relativePath);
+  // Garde-fou : `deleteDirectory('')` resoudrait sur la racine et effacerait
+  // tout le stockage. Le cas ne devrait pas arriver, il ne doit pas etre possible.
+  if (absolute === STORAGE_ROOT) {
+    throw new StorageError('Refus de supprimer la racine du stockage');
+  }
+  await rm(absolute, { recursive: true, force: true });
 }
 
 /** Type MIME deduit de l'extension, pour l'en-tete de la route de service. */

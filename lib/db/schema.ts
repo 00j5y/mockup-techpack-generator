@@ -50,6 +50,12 @@ export const products = pgTable(
     fabricColorHex: text('fabric_color_hex'),
     fabricGradientEnabled: boolean('fabric_gradient_enabled').notNull().default(false),
     fabricGradientIntensity: text('fabric_gradient_intensity'),
+    /**
+     * Le defaut SQL ci-dessous doit rester aligne sur `DEFAULT_SIZE_RANGE`
+     * (`types/product.ts`), que le formulaire de creation utilise pour
+     * pre-remplir la gamme. Ne pas editer ce SQL a la main : la migration est
+     * generee et committee, toute evolution passe par `db:generate`.
+     */
     sizeRange: text('size_range')
       .array()
       .notNull()

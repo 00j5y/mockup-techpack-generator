@@ -141,6 +141,17 @@ export const TECHPACK_SIZE_COLUMNS = [
 ] as const;
 export type TechpackSizeColumn = (typeof TECHPACK_SIZE_COLUMNS)[number];
 
+/**
+ * Gamme de tailles d'un produit qui n'en precise pas.
+ *
+ * Doit rester alignee sur le `default` SQL de `products.size_range`
+ * (`lib/db/schema.ts`). Sa raison d'etre est d'etre le SEUL endroit ou le
+ * formulaire de creation lit cette liste : `12-pieges.md` met explicitement en
+ * garde contre son hardcodage dans un composant, un produit dont la gamme
+ * differe casserait alors silencieusement.
+ */
+export const DEFAULT_SIZE_RANGE = ['XS', 'S', 'M', 'L', 'XL', '2XL'] as const;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -152,9 +163,31 @@ export function isDimensionLine(
   return point.endXPercent !== null && point.endYPercent !== null;
 }
 
+/**
+ * Ramene une colonne `text` dans son union litterale, avec valeur de repli.
+ *
+ * Les CHECK Postgres rendent ces valeurs sures en pratique, mais un
+ * `flat.type as FlatType` masque le cas ou la valeur sort de l'union : la
+ * recherche dans un objet de libelles rendrait alors `undefined`, et l'ecran
+ * afficherait un blanc sans que rien ne signale l'anomalie. Le repli rend
+ * l'affichage toujours defini, et le cast ci-dessous est justifie par le test
+ * d'appartenance qui le precede.
+ */
+export function oneOf<T extends string>(allowed: readonly T[], value: string, fallback: T): T {
+  return (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
 /** URL publique d'un fichier du stockage local, servie a la meme origine que l'app. */
 export function fileUrl(storagePath: string): string {
-  return `/api/files/${storagePath}`;
+  // Chaque segment est encode separement : encoder le chemin entier
+  // transformerait les `/` en `%2F` et la route catch-all ne retrouverait plus
+  // le fichier. Sans encodage, un espace ou un `#` dans un chemin casserait
+  // l'URL en silence.
+  const encoded = storagePath
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `/api/files/${encoded}`;
 }
 
 // ---------------------------------------------------------------------------

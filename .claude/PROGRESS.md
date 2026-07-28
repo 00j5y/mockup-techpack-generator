@@ -1,14 +1,14 @@
 # Avancement Constitue Studio
 
-> Dernière mise à jour : 2026-07-27
+> Dernière mise à jour : 2026-07-28
 > À lire en début de session, à mettre à jour en fin de session.
 
 ## État global
 
 | Phase | Statut | Branche |
 |---|---|---|
-| 0 - Setup | 🟢 Terminé, non mergé | `feature/bootstrap` |
-| 1 - CRUD Produit | ⬜ Pas commencé | `feature/product-crud` |
+| 0 - Setup | ✅ Terminé et mergé (PR #1, commit de merge `ab3d03c`) | `feature/bootstrap` |
+| 1 - CRUD Produit | 🟡 En cours | `feature/product-crud` |
 | 2 - Éditeur de mesures | ⬜ Pas commencé | `feature/measurement-canvas` |
 | 3 - BOM / Colors / Packaging / Artwork | ⬜ Pas commencé | `feature/bom-and-specs` |
 | 4 - Techpack PDF | ⬜ Pas commencé | `feature/techpack-pdf-export` |
@@ -19,36 +19,57 @@ Légende : ⬜ pas commencé, 🟡 en cours, ✅ terminé et mergé
 
 ## Phase en cours
 
-**Phase 0**, branche `feature/bootstrap`. Socle technique en place, vérifié de bout en bout, sans dépendance externe.
+**Phase 1**, branche `feature/product-crud`. CRUD produit, header éditable en place, upload des flats.
 
-### Fait et vérifié
+### Livré
 
-- [x] Dépôt git initialisé, remote `origin` configuré, branche `feature/bootstrap`
-- [x] Next.js **15.5.22** (App Router, TypeScript `strict`, Tailwind 4, React 19.1), runtime Bun 1.3.13
-- [x] **Postgres 17 en Docker** + **Drizzle** : `lib/db/schema.ts` est la source unique, il génère la migration SQL et les types
-- [x] Les 13 tables créées et vérifiées en base : contraintes `check` et `on delete cascade` testées par insertions réelles
-- [x] `types/product.ts` dérivé du schéma via `InferSelectModel`, plus les plafonds du template et les 10 colonnes de tailles fixes
-- [x] **Stockage local** (`lib/storage` + `/api/files/[...path]`) : validation MIME, plafond 25 Mo, garde anti-traversée de chemin testée
-- [x] `.env.example`, `.dockerignore`, `docker-compose.yml`
-- [x] `Dockerfile` 4 étapes avec Chromium, utilisateur non-root avec home accessible
-- [x] **Test de fumée PDF** (`bun run smoke:pdf`) : passe en local **et** dans le conteneur, dimensions identiques des deux côtés
-- [x] Source Sans 3 auto-hébergée (woff2 dans le build, aucun appel CDN à l'exécution)
+- [x] Liste des produits avec filtres par catégorie et par statut, badges de statut
+- [x] Création de produit (`/products/new`) avec pré-remplissage du logo depuis le produit le plus récent
+- [x] Vue produit (`/products/[id]`) : header éditable en place, formulaire général, flats, indicateurs de complétion, suppression
+- [x] Header du techpack éditable **à sa géométrie réelle** : `headerLayout.ts` est la source unique, consommée par `TechpackHeader.tsx` (print, pur) et `TechpackHeaderEditor.tsx` (édition, client)
+- [x] Zone de drag-and-drop du logo aux dimensions exactes du slot (72 x 70 pt), avertissement quand l'image n'a pas de canal alpha
+- [x] Avertissement de débordement de colonne mesuré à la frappe avec la police réelle (`measureTextPt.ts`)
+- [x] Auto-save par champ, debounce 1 s, flush au démontage et à `beforeunload`, retry sans perte de saisie (`useAutoSavePatch.ts`)
+- [x] Upload et suppression des flats, avec confirmation chiffrée de l'impact (points de mesure et callouts supprimés en cascade, couleurs et artworks qui perdent leur ancrage)
+- [x] Routes API : `/api/products`, `/api/products/[id]`, `/api/products/[id]/logo`, `/api/products/[id]/flats`, `/api/products/[id]/flats/[flatId]`, validées par Zod
+- [x] `zod` ajouté en dépendance
+- [x] Suite de tests (`bun test`) : 99 tests, 217 assertions, 5 fichiers, dans `tests/` à la racine plutôt qu'à côté du code testé. `@types/bun` ajouté en devDependency (sinon `tsc --noEmit` échoue sur `bun:test`)
+- [x] Recette API rejouable `scripts/api-check.sh` (`bun run test:api`) : 19 points vérifiés contre un serveur local sur le port 3100, création puis suppression de vraies données, contrôle qu'il ne reste ni ligne ni fichier orphelin
+- [x] `import 'server-only'` en tête de `lib/db/index.ts` et `lib/storage/index.ts`
+- [x] Robustesse diverse : `apiError` ne sérialise `details` qu'en dehors de la production, `touchProduct()` dans `lib/db/queries.ts` (à appeler par tout module qui dépose ou supprime un flat, pour tenir `products.updated_at` à jour), avertissement à la saisie sur un second flat FRONT ou BACK, `fileUrl()` encode les segments d'URL
+
+### Vérifié
+
+- [x] `bun test` : 99 tests, 217 assertions, 5 fichiers : cohérence interne de `headerLayout.ts`, détection de géométrie de header recopiée hors de sa source unique, schémas de validation Zod, helpers de formatage (fuseau, locale), `oneOf` et `fileUrl`
+- [x] L'invariant de la règle dure n°2 (géométrie du header à un seul endroit) est désormais vérifié par un test, pas seulement décrit en prose dans `headerLayout.ts`. Test vu échouer avant d'être validé : valeur de colonne modifiée temporairement, échec constaté, valeur restaurée
+- [x] Recette API `scripts/api-check.sh` : 19 points au vert
 - [x] `bun run typecheck`, `bun run lint`, `bun run build` passent
-- [x] Image Docker construite, app servie en HTTP 200 sans erreur au log
+- [x] Stack Docker complet vérifié, l'app crée une ligne en base depuis le conteneur
 
-- [x] **Stack complet `docker compose`** : app + db ensemble, page en 200, `/api/files` répond 404 sur fichier absent, `DATABASE_URL` pointe bien sur le service `db`, Chromium présent dans l'image app, 13 tables en base
+### Revue de code du 2026-07-28
 
-### Reste à faire
+Section distincte des « Bloquants résolus » plus bas : ces défauts viennent d'une revue interne menée pendant une phase encore en cours, ils n'ont jamais bloqué le travail.
 
-- [ ] `pg_dump` en cron, avant toute utilisation sérieuse
-- [ ] **Phase 1** : vérifier que `drizzle-orm` et `postgres` entrent dans l'image standalone dès qu'une page importe `lib/db` (Next ne trace que ce que le code atteint : ils n'y sont pas encore)
-- [ ] **Phase 4** : vérifier que `puppeteer`, déclaré en `serverExternalPackages`, est bien copié dans l'image standalone
-
-**La Phase 0 n'a plus de bloquant externe.** Plus de compte tiers à créer, tout tourne en local.
+| # | Défaut | Correction |
+|---|---|---|
+| 1 | Dimensions du slot logo (`72pt`, `70pt`) et couleur `#CCCCCC` du header recopiées en dur dans `ProductCreateForm.tsx` (violation de la règle dure n°2) | Import de `LOGO_SLOT` et `TP_COLORS` depuis `headerLayout.ts` |
+| 2 | `measureTextPt.ts` lisait la variable CSS `--font-techpack` sur `document.documentElement`, or `next/font` la pose sur `<body>` : la valeur lue était vide, repli silencieux sur `sans-serif`, avertissement de débordement déclenché trop tôt (Source Sans 3 plus étroite qu'Arial) | Lecture corrigée sur `<body>`, plus hook `useFontsReady` : avec `display: 'swap'`, le premier rendu utilise la police de repli tant que `document.fonts.ready` n'est pas résolu |
+| 3 | `useAutoSavePatch.ts` : deux PATCH en vol sur le même champ pouvaient arriver dans le désordre (écran annonçant « Enregistré » avec l'ancienne valeur en base) ; le renvoi de dernière chance au démontage était conditionné à un timer de debounce encore armé, alors qu'il est consommé dès qu'il se déclenche | Sérialisation (une requête en vol au maximum, file d'un élément) ; renvoi de dernière chance appliqué sans condition sur les deux chemins |
+| 4 | Le rendu print tronquait silencieusement le texte en débordement (`overflow: hidden`), alors que l'éditeur annonçait à l'utilisateur un débordement vers la colonne suivante : contradiction directe avec `12-pieges.md` | Débordement rendu réel et visible au print |
+| 5 | Décalage de 1pt entre print et éditeur sur l'encadré rouge de la taille de référence : le print compensait le padding mais pas la largeur de bordure | Padding et bordure appliqués aux deux, bordure transparente sur les tailles non sélectionnées |
+| 6 | Un produit pouvait rester créé en base malgré une réponse 500 : le POST insérait la ligne puis copiait le logo, une copie en échec laissait la ligne orpheline | Identifiant généré côté application (`crypto.randomUUID()`), copie du fichier avant l'insert, chemin final inséré directement, fichier copié supprimé si l'insert échoue |
+| 7 | `logoStoragePath` acceptable en PATCH permettait de faire pointer un produit vers le fichier d'un autre, puis de faire supprimer ce fichier en déposant un nouveau logo | Champ retiré du schéma de PATCH (conservé en création pour le pré-remplissage), vérification `belongsToProduct()` avant toute suppression |
+| 8 | Trois routes de suppression renvoyaient un 500 trompeur sur une erreur disque survenue après une suppression en base déjà effectuée | Erreurs disque avalées et journalisées, fichier restant traité comme orphelin connu |
+| 9 | Chaîne vide et `null` cohabitaient pour représenter le même vide selon le point d'entrée (formulaire de création vs header éditable) | Normalisé dans le schéma Zod |
+| 10 | L'intensité de dégradé affichée n'était pas celle stockée : la page repliait `null` sur `medium` sans émettre de PATCH | Select propose « non renseignée », incohérence « dégradé activé sans intensité » signalée visuellement |
 
 ## Prochaine action
 
-Phase 1, branche `feature/product-crud` : CRUD produit, upload des flats, header éditable en place.
+Phase 2, branche `feature/measurement-canvas`, après recette manuelle de Jay et merge de la Phase 1.
+
+## Reste à faire, hors phase
+
+- [ ] `pg_dump` en cron, **avant toute utilisation sérieuse**. Ouvert depuis la Phase 0 : la base vit dans un volume Docker, un `docker compose down -v` malheureux efface tout sans filet.
 
 ## Bloquants / en attente d'une décision de Jay
 
@@ -65,6 +86,8 @@ Phase 1, branche `feature/product-crud` : CRUD produit, upload des flats, header
 | 2026-07-27 | Buckets Storage : public ou privé ? | **Caduque** : sortie de Supabase le jour même. Remplacé par du stockage local, voir ci-dessous |
 | 2026-07-27 | Quota de projets Supabase atteint | Sortie complète de Supabase : Postgres Docker + fichiers locaux + pas d'auth |
 | 2026-07-27 | `git init` + remote | Fait, branche `feature/bootstrap` |
+| 2026-07-28 | Lecture de `DATABASE_URL` au chargement du module `lib/db/index.ts` cassait `next build` dans Docker (`Failed to collect page data for /api/products`) | Connexion paresseuse : `lib/db/index.ts` expose un `Proxy` qui crée le pool au premier accès réel |
+| 2026-07-28 | Volume Docker `storage-data` créé avec le propriétaire root, upload impossible en `EACCES` sous l'utilisateur non-root `nextjs` | `RUN mkdir -p /app/storage && chown nextjs:nodejs /app/storage` avant `USER nextjs` dans le Dockerfile, plus suppression du volume existant pour que le correctif s'applique |
 
 ## Décisions prises
 
@@ -89,6 +112,14 @@ Phase 1, branche `feature/product-crud` : CRUD produit, upload des flats, header
 | 2026-07-27 | **Pas d'auth pour l'instant** | Décision de Jay, outil personnel en local. Redevient bloquant avant tout déploiement public |
 | 2026-07-27 | `tsconfig` cible ES2022 au lieu du ES2017 par défaut | Le flag regex `s` (dotAll) exige ES2018+. ES2017 est archaïque pour Node 26 |
 | 2026-07-27 | Géométrie du header dans `headerLayout.ts`, consommée par `TechpackHeader` (print, pur) et `TechpackHeaderEditor` (édition, client) | Le rendu PDF ne doit pas traîner d'hydratation React ni de balises `input`. Un `mode: print \| edit` sur un composant unique aurait rendu tout le chemin PDF client |
+| 2026-07-28 | Pas de route `/api/upload` générique | L'upload écrit un fichier ET une ligne en base, les séparer exposerait à un fichier sans ligne ou l'inverse. La validation MIME et le plafond de taille sont déjà centralisés dans `lib/storage`, ce qui était la raison d'être de la route générique |
+| 2026-07-28 | `size_range` restreint aux 10 colonnes du tableau page 3 à la saisie, bien que la base accepte un `text[]` libre | Une taille hors de ces colonnes n'aurait aucune colonne où s'afficher et disparaîtrait silencieusement à la génération |
+| 2026-07-28 | Le logo pré-rempli est **dupliqué** côté serveur à la création, pas partagé | Sans ça, deux produits pointeraient sur le même fichier et supprimer le premier casserait le second |
+| 2026-07-28 | La taille de référence se change dans le header (clic sur la taille, encadré rouge), et la case correspondante est verrouillée dans la gamme de tailles | Décocher produirait un 400 sans issue évidente, à cause du CHECK `products_sample_size_in_range` |
+| 2026-07-28 | Connexion Postgres paresseuse via un `Proxy` dans `lib/db/index.ts` | Pour que `next build` n'exige pas `DATABASE_URL` |
+| 2026-07-28 | Tests dans `tests/` à la racine, pas à côté du code testé | Un des tests scanne `components/` à la recherche de littéraux de géométrie du header : un fichier de test posé à côté du code contiendrait ces littéraux et se signalerait lui-même |
+| 2026-07-28 | `import 'server-only'` en tête de `lib/db/index.ts` et `lib/storage/index.ts` | La frontière serveur ne doit pas dépendre du seul mot-clé `type` à l'import : un import oublié doit faire échouer le build, pas fuiter `DATABASE_URL` dans le bundle client |
+| 2026-07-28 | Intensité de dégradé : affichage « non renseignée » plutôt qu'un repli sur `medium` suivi d'un PATCH automatique | Un écrit en base déclenché par un simple affichage contredirait l'auto-save par champ, et produirait en Phase 5 un prompt construit sur une intensité que Jay n'a jamais validée |
 
 ## Modèle Claude par tâche
 

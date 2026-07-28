@@ -109,13 +109,15 @@ Le piège classique : Puppeteer marche en local (il télécharge son Chromium), 
 
 Piège aggravant : `bun` bloque les postinstall par défaut, donc l'erreur reste invisible jusqu'au jour où quelqu'un fait `bun pm trust`. N'autoriser que les paquets qui en ont besoin, jamais `--all`.
 
-### La sortie standalone ne trace que ce que le code importe
+### La sortie standalone ne trace que ce qui échappe au bundling
 
-`output: 'standalone'` n'embarque dans `node_modules` que les paquets réellement atteints depuis le code de l'app. En Phase 0, l'image ne contient ni `drizzle-orm`, ni `postgres`, ni `puppeteer`, simplement parce qu'aucune page ne les importe encore.
+En Phase 0, l'image ne contenait ni `drizzle-orm`, ni `postgres`, ni `puppeteer` dans `node_modules`, et l'hypothèse de départ était qu'il fallait vérifier leur arrivée dès qu'une page les importerait. **Cette hypothèse était fausse, vérifié en Phase 1.**
 
-Ce n'est pas un bug, mais **deux vérifications en découlent** :
+Après que les pages et routes de la Phase 1 importent `lib/db`, `.next/standalone/node_modules` contient toujours exactement 18 paquets, et ni `drizzle-orm`, ni `postgres`, ni `zod` n'y figurent. Ce n'est pas un manque : Next les **bundle** directement dans les chunks serveur. Vérifié par `grep -rl "drizzle-orm" .next/standalone/.next/server`, qui trouve `chunks/103.js`.
 
-- **Phase 1** : dès qu'une page importe `lib/db`, vérifier que `drizzle-orm` et `postgres` arrivent bien dans l'image, et que l'app interroge la base depuis le conteneur.
+Seuls les paquets déclarés dans `serverExternalPackages` (donc `puppeteer` et `puppeteer-core`) échappent au bundling et doivent réellement être tracés puis copiés dans `node_modules`. La vérification de la Phase 4 reste donc entièrement valable, celle de la Phase 1 était mal posée : le vrai test n'était pas « le paquet est-il présent », mais « l'app interroge-t-elle la base depuis le conteneur ».
+
+- **Fait en Phase 1** : `POST /api/products` depuis le conteneur crée bien la ligne, relue ensuite en `psql` dans le conteneur `db`.
 - **Phase 4** : `puppeteer` est déclaré dans `serverExternalPackages`, donc non bundlé. Vérifier que le traçage le copie quand même dans l'image. Si ce n'est pas le cas, il faudra le copier explicitement dans le Dockerfile.
 
 Ne pas supposer que ça marchera : le tester.
@@ -128,6 +130,12 @@ Ne pas supposer que ça marchera : le tester.
 - attente explicite que chaque `<img>` ait `complete === true` et `naturalWidth > 0`
 
 Symptôme si oublié : PDF avec des cases vides à la place des flats, de façon intermittente selon la latence réseau.
+
+### Mesure de texte et `next/font`
+
+`next/font` pose sa variable CSS (ex: `--font-techpack`) sur `<body>`, pas sur `<html>`. La lire sur `document.documentElement` renvoie une chaîne vide, les custom properties CSS héritent vers le bas, jamais vers le haut, et le repli générique (`sans-serif`) s'applique alors en silence, sans erreur visible. Rencontré en Phase 1 dans `measureTextPt.ts` : l'avertissement de débordement de colonne se déclenchait trop tôt, Source Sans 3 étant plus étroite qu'Arial.
+
+Corollaire de `display: 'swap'` : toute mesure de texte faite avant que `document.fonts.ready` soit résolu utilise encore la police de repli, la police définitive n'étant pas chargée au premier rendu. Un hook qui attend `document.fonts.ready` et redéclenche la mesure est nécessaire, en plus de la correction de la variable CSS. Piège réutilisable dès qu'il faudra mesurer du texte en Phase 4.
 
 ### `printBackground`
 
@@ -144,9 +152,13 @@ Une police chargée depuis une CDN externe qui ne répond pas dans le conteneur 
 ## Base de données et stockage
 
 - **`lib/db` est serveur uniquement.** `DATABASE_URL` contient le mot de passe de la base. Un import depuis un fichier atteint par un Client Component la ferait fuiter dans le bundle. Même règle pour `lib/storage`.
+- **Lire une variable d'environnement au chargement d'un module casse `next build`.** `lib/db/index.ts` lisait `DATABASE_URL` au niveau module et levait une erreur si elle était absente. `next build` évalue les modules des routes API à l'étape « Collecting page data » : le build Docker cassait sur `Failed to collect page data for /api/products`, alors que le build n'a besoin d'aucune base. Invisible en local, où `.env.local` existe. Correction retenue : connexion paresseuse, `lib/db/index.ts` expose un `Proxy` qui crée le pool au premier accès réel. Règle générale : dans un module atteint par une route, aucune lecture d'environnement obligatoire au chargement, tout ce qui peut échouer va derrière un appel.
 - **Cascade de suppression.** Supprimer un flat cascade sur `measurement_points` et `callouts`, et met à `null` le `flat_id` de `color_specs` et `artwork_specs`. Avertir explicitement du nombre d'éléments perdus, pas juste "Êtes-vous sûr ?".
 - **Fichiers orphelins.** Supprimer une ligne en base ne supprime pas le fichier sur disque. Appeler `deleteFile()` dans la même opération, sinon `.storage/` accumule des orphelins que rien ne référence.
+- **Écrire en base avant une opération fichier qui peut échouer laisse une ligne orpheline.** Rencontré en Phase 1 : `POST /api/products` insérait la ligne puis copiait le logo pré-rempli ; une copie en échec renvoyait 500 alors que la ligne existait déjà en base. Faire l'opération fichier d'abord, insérer le chemin final ensuite, supprimer le fichier copié si l'insert échoue.
+- **Une erreur disque après une écriture en base déjà réussie ne doit pas se transformer en 500.** La suppression ou la modification a déjà eu lieu : un 500 trompeur pousserait l'utilisateur à recliquer sur un objet qui n'existe plus, pour recevoir un 404 déroutant. Avaler l'erreur, la journaliser, traiter le fichier restant comme un orphelin connu.
 - **Une variable d'environnement vide n'est pas absente.** `STORAGE_DIR=` dans un `.env` donne une chaîne vide, que `??` laisse passer : le stockage se retrouve alors à la racine du projet. Utiliser `process.env.X?.trim() || defaut`. Ce bug est déjà arrivé en Phase 0.
+- **Un volume Docker nommé appartient à root si le point de montage n'existe pas dans l'image.** Le conteneur tourne en utilisateur non-root `nextjs`. Le volume `storage-data` monté sur `/app/storage` était créé par Docker avec le propriétaire root, donc le premier upload échouait en `EACCES: permission denied, mkdir '/app/storage/products'`. Le build passait, l'app répondait 200, seul un vrai upload révélait le problème. Correction : `RUN mkdir -p /app/storage && chown nextjs:nodejs /app/storage` dans l'étape `runner` du Dockerfile, avant `USER nextjs`. Docker reprend le propriétaire du dossier présent dans l'image au moment où il crée le volume. Point important : **un volume déjà créé garde son propriétaire d'origine**, il faut le supprimer (`docker compose down && docker volume rm <projet>_storage-data`) pour que le correctif prenne effet.
 - **drizzle-kit ne voit pas les variables chargées par Bun.** Il évalue `drizzle.config.ts` dans un sous-processus Node. D'où le `dotenv` explicite dans le fichier de config. Sans lui : `url: undefined`.
 - **Ne jamais modifier la base à la main.** Toute évolution passe par `lib/db/schema.ts`, puis `bun run db:generate`, puis `bun run db:migrate`. Le SQL de `drizzle/` est généré et committé, jamais édité.
 
@@ -155,6 +167,9 @@ Une police chargée depuis une CDN externe qui ne répond pas dans le conteneur 
 - Ne jamais perdre la saisie en cas d'échec réseau : garder la valeur locale, afficher l'erreur, permettre un retry.
 - Attention au conflit entre auto-save et navigation : un `PATCH` en vol quand l'utilisateur change de page peut être annulé. Flush le debounce au `beforeunload` et au démontage du composant.
 - Un debounce par champ, pas un debounce global qui écraserait des champs non modifiés.
+- **Deux requêtes d'auto-save concurrentes sur le même champ peuvent arriver dans le désordre.** Si la réponse la plus ancienne arrive après la plus récente, la base garde l'ancienne valeur pendant que l'écran affiche la nouvelle et annonce « Enregistré », sans aucun signal d'erreur. Sérialiser : une requête en vol au maximum, avec une file d'un seul élément. Rencontré en Phase 1 dans `useAutoSavePatch.ts`.
+- **Un renvoi de dernière chance ne doit jamais être conditionné à la présence d'un timer de debounce armé.** Le timer est consommé dès qu'il se déclenche : après un échec réseau, plus rien n'est armé, et un renvoi qui dépend de ce timer ne se déclenche jamais. Les deux chemins de sortie (démontage, `beforeunload`) doivent appliquer la même logique inconditionnelle.
+- **Ne pas replier une valeur `null` sur une valeur par défaut à l'affichage sans l'écrire en base.** L'écran annonce alors quelque chose que la base ne contient pas. Rencontré en Phase 1 sur l'intensité de dégradé : un repli silencieux sur `medium` aurait laissé la Phase 5 construire son prompt sur une valeur jamais validée.
 
 ## Génération IA
 

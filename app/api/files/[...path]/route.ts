@@ -29,6 +29,11 @@ export async function GET(
         // contenu, sauf les overlays, ecrases a chaque export. `must-revalidate`
         // garde le cache utile sans servir un overlay perime.
         'Cache-Control': 'private, max-age=3600, must-revalidate',
+        // Le stockage accepte le SVG, qui peut porter du script et qui est ici
+        // servi a la meme origine que l'application. `sandbox` neutralise
+        // l'execution, `nosniff` empeche le navigateur de reinterpreter le type.
+        'Content-Security-Policy': 'sandbox; default-src \'none\'',
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   } catch (error) {
