@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.local
+    environment:
+      # Ecrasent ce que .env.local pourrait contenir : en conteneur, Chromium
+      # vient du systeme, pas du telechargement Puppeteer.
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
+    restart: unless-stopped
+    # Puppeteer lance Chromium, qui a besoin de plus que les 64 Mo de /dev/shm
+    # par defaut. Sans ca, le navigateur crashe sur les pages lourdes.
+    shm_size: 1gb

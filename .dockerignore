@@ -1,0 +1,23 @@
+# Reinstalle dans l'image : les binaires natifs de l'hote (macOS) ne sont pas
+# utilisables dans le conteneur (Linux).
+node_modules
+
+.git
+.next
+.smoke
+
+# Secrets : injectes par docker-compose via env_file, jamais copies dans l'image.
+.env
+.env.*
+!.env.example
+
+# Documentation et references : ~1.6 Mo inutiles dans le contexte de build.
+.claude
+CLAUDE.md
+
+README.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+.DS_Store
+*.tsbuildinfo

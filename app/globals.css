@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+/*
+ * Palette du template Seaggs. Ces tokens ne servent QUE au rendu du techpack,
+ * pas a l'interface de l'application.
+ * Voir .claude/docs/15-template-seaggs.md.
+ */
+:root {
+  --tp-frame: #231f20; /* cadre, separateurs, bordures de tableau */
+  --tp-bar: #cccccc; /* fond de la barre de titre et du bloc header */
+  --tp-red: #ff0000; /* TOUT ce que l'utilisateur renseigne */
+  --tp-white: #ffffff; /* fond des zones de contenu, blanc pur, aucun filigrane */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-techpack);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-techpack), system-ui, sans-serif;
+}

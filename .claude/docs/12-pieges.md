@@ -1,0 +1,145 @@
+# 12 - Pièges et anti-patterns
+
+**À relire avant chaque phase.** Ce fichier regroupe les erreurs qui coûtent le plus cher sur ce projet précis.
+
+## Les 5 signaux d'alarme architecturaux
+
+Si l'un de ces cas se produit, **s'arrêter et corriger**, pas contourner :
+
+| Signal | Ce que ça révèle |
+|---|---|
+| Je copie-colle le markup du header dans une page de techpack | `TechpackHeader` n'est pas correctement paramétré |
+| J'écris du code qui recopie des mesures dans une structure dédiée au PDF | La page 3 doit dériver directement de `measurement_points` + `measurement_values` |
+| Je stocke une position en pixels | Le flat réexporté cassera tout |
+| Je construis un second éditeur canvas pour les callouts | La Phase 2 a été mal découpée |
+| `AnnotatedCanvas` contient le mot "measurement" | La primitive n'est pas générique, les 5 autres pages qui en dépendent vont dupliquer du code |
+| `buildImagePrompt` a besoin d'un client Supabase | La fonction n'est plus pure, donc plus testable sans coût |
+| Je code une page de techpack en flexbox ou grid fluide | Le template est un document Illustrator en positions absolues, les coordonnées sont connues au point près |
+
+## Pièges spécifiques au template Seaggs
+
+Découverts en analysant le template et l'exemple rempli. Détail dans `15-template-seaggs.md`.
+
+### Format de page
+
+Le techpack est en **paysage `761.4 x 581.4 pt`**, un format custom. Passer `format: 'A4'` ou `format: 'Letter'` à Puppeteer produit un PDF au mauvais ratio dont toute la mise en page est décalée.
+
+Deux pièges vérifiés en Phase 0, tous deux invisibles à la lecture du code :
+
+- **`page.pdf()` rejette l'unité `pt`.** `width: '761.4pt'` lève `Failed to parse parameter value`. Seuls `px`, `in`, `cm`, `mm` passent. Utiliser `'10.575in'` / `'8.075in'`. Le CSS `@page`, lui, accepte les points : l'interdiction est côté JavaScript uniquement.
+- **Le PDF sort en `761.04 x 581.04`, pas en `761.4 x 581.4`.** Chromium tronque la taille de page au centième de pouce. Ne pas « corriger » les coordonnées de la doc pour compenser : l'écart est de 0,05 % et tombe dans le cadre extérieur de 5 pt. Détail dans `15-template-seaggs.md`.
+
+### Nombre de pages
+
+**Toujours 12 pages**, même vides. L'exemple rempli garde les pages 9, 11 et 12 vides avec leur header et leur cadre. Une génération qui saute les pages sans données produit un techpack non conforme.
+
+Corollaire : les emplacements sont en **nombre fixe** (17 mesures, 12 callouts, 6 couleurs, 12 cellules BOM, 2 pages artwork, 3 extra). Tronquer silencieusement à la génération est le pire comportement possible : l'information disparaît sans que personne le voie. Avertir **à la saisie**.
+
+### Code couleur
+
+Tout ce que l'utilisateur renseigne est **rouge `#FF0000`**, toute la structure est en `#231F20` ou `#CCCCCC`. **Sauf le texte des cellules BOM, qui est noir.** Cette exception est facile à rater : elle se voit immédiatement en comparant à `exemple-p-04.jpg`.
+
+### Style des cotes
+
+Les cotes ont des **embouts perpendiculaires** (`⊢⊣`), **pas des flèches**. La spec initiale du projet disait "flèches aux deux bouts", c'était une erreur de lecture. Les cotes obliques existent (mesure de manche), donc les embouts doivent être perpendiculaires au trait, pas systématiquement horizontaux ou verticaux.
+
+### Filigrane
+
+Le filigrane `SEAGGS` tuilé en `#F7F7F7` est la marque de l'auteur du template, pas un élément de mise en page. **Ne pas le reproduire, ne pas le remplacer.** Zones de contenu en blanc pur.
+
+Piège de lecture : ce gris représente 33 % des pixels du template vierge. En analysant les couleurs dominantes d'une page on peut croire à un fond de zone de contenu gris clair. C'est le filigrane, le fond est blanc.
+
+### Polices
+
+Le template utilise **Myriad Pro**, disponible sur la machine de Jay uniquement via le cache obfusqué Adobe Fonts, et dont la licence ne couvre pas l'installation sur un serveur. Substitut retenu : **Source Sans 3**.
+
+Ne pas se contenter d'un fallback système : l'écart se verrait sur la barre de titre et le header, présents sur les 12 pages. Et Source Sans 3 n'étant pas métriquement compatible avec Myriad Pro, prévoir un ajustement de corps ou de `letter-spacing` sur ces zones. Détail dans `15-template-seaggs.md`.
+
+### Artwork blanc sur fond blanc
+
+Une impression blanche rendue sur le fond blanc de la page est **invisible**. L'exemple place systématiquement les impressions blanches sur un rectangle noir. D'où le champ `background_hex` sur `artwork_specs`. Sans lui, la page 8 paraît à moitié vide sans qu'on comprenne pourquoi.
+
+### Taille de référence
+
+`products.sample_size` pilote trois rendus : l'encadré rouge du `SIZE RANGE:` dans le header, la colonne remplie de la page 3, et les valeurs affichées sur les cotes de la page 2. Les faire dériver de trois sources différentes reproduirait l'incohérence de l'exemple Seaggs, où l'encadré est sur `XL` et les valeurs dans la colonne `L`.
+
+## Coordonnées et canvas
+
+### Le piège du référentiel
+
+Trois espaces de coordonnées coexistent dans l'éditeur :
+
+1. L'espace **naturel de l'image** (ex: 2000x2500 px, la résolution du fichier)
+2. L'espace **du canvas à l'écran** (ex: 800x1000 px)
+3. L'espace **après zoom/pan** (transformation du Stage)
+
+Les pourcentages stockés en base se réfèrent **toujours à l'espace naturel de l'image**. Mélanger les référentiels produit un bug invisible en édition et catastrophique à l'export PDF. Centraliser la conversion dans un helper testé, ne jamais la faire inline.
+
+### Le canvas "tainted"
+
+`stage.toDataURL()` lève une `SecurityError` si une image du canvas vient d'une origine sans en-tête CORS approprié. Symptôme trompeur : tout marche en dev avec des images locales, l'export casse avec les images Supabase.
+
+À vérifier **le premier jour de la Phase 2** : charger un flat depuis Supabase Storage avec `crossOrigin = 'anonymous'` et tenter un `toDataURL`. Si ça échoue, ajuster la config du bucket avant d'écrire le reste du module.
+
+### L'UI dans l'export
+
+Les halos de sélection, poignées de drag, curseurs et grilles d'aide font partie du canvas : ils **apparaissent dans l'export** si on ne les masque pas. Prévoir un état `isExporting` qui les désactive avant le `toDataURL`.
+
+## Konva et SSR
+
+`react-konva` touche au DOM et casse au rendu serveur. Le composant doit être importé en `dynamic(() => import('...'), { ssr: false })`. Symptôme si oublié : erreur cryptique du type "Cannot read property of undefined" au build ou au premier render.
+
+## Puppeteer
+
+### Docker
+
+Le piège classique : Puppeteer marche en local (il télécharge son Chromium), et casse dans le conteneur (dépendances système absentes). Installer Chromium et ses libs **dès la Phase 0** dans le Dockerfile, et vérifier que le build Docker passe, même si la génération PDF n'est codée qu'en Phase 4.
+
+### Images non chargées
+
+`page.pdf()` ne garantit pas que les images sont rendues. Un `waitUntil: 'networkidle0'` peut suffire, souvent pas. Ajouter :
+
+- attente sur `document.fonts.ready`
+- attente explicite que chaque `<img>` ait `complete === true` et `naturalWidth > 0`
+
+Symptôme si oublié : PDF avec des cases vides à la place des flats, de façon intermittente selon la latence réseau.
+
+### `printBackground`
+
+Sans `printBackground: true`, tous les fonds gris du template disparaissent. Le PDF est alors "presque bon", ce qui est le pire cas : on peut ne pas le remarquer tout de suite.
+
+### Polices
+
+Une police chargée depuis une CDN externe qui ne répond pas dans le conteneur = fallback silencieux vers une police système = toute la mise en page décalée. Embarquer les polices localement (`next/font` avec des fichiers locaux, ou `@font-face` sur des fichiers du repo).
+
+### Pages blanches
+
+`page-break-after: always` sur le dernier élément génère une page blanche finale. Utiliser `:last-child { page-break-after: auto }`.
+
+## Supabase
+
+- **Deux clients distincts.** `service_role` uniquement côté serveur. Une clé `service_role` dans un fichier importé par un Client Component finit dans le bundle navigateur.
+- **RLS activée dès le départ.** Une table Supabase sans RLS est lisible par n'importe qui avec la clé anon (qui est publique par nature).
+- **Cascade de suppression.** Supprimer un flat cascade sur `measurement_points`, `callouts` et `artwork_specs`. Avertir explicitement l'utilisateur du nombre d'éléments qui seront perdus, pas juste "Êtes-vous sûr ?".
+- **Fichiers orphelins.** Supprimer une ligne en base ne supprime pas le fichier dans Storage. Prévoir la suppression du fichier dans la même opération, sinon le bucket accumule des orphelins.
+
+## Auto-save
+
+- Ne jamais perdre la saisie en cas d'échec réseau : garder la valeur locale, afficher l'erreur, permettre un retry.
+- Attention au conflit entre auto-save et navigation : un `PATCH` en vol quand l'utilisateur change de page peut être annulé. Flush le debounce au `beforeunload` et au démontage du composant.
+- Un debounce par champ, pas un debounce global qui écraserait des champs non modifiés.
+
+## Génération IA
+
+- **Coût réel.** Chaque test consomme de l'argent. Développer avec `quality: 'low'`, et tester la construction du prompt sans appel API grâce aux tests unitaires de `buildImagePrompt`.
+- **Ne pas hardcoder l'identifiant du modèle ni les prix** de mémoire : vérifier la doc OpenAI. Centraliser dans `lib/openai/config.ts`.
+- **Pas de double-clic générateur.** Désactiver le bouton pendant l'appel, sinon deux générations partent et sont facturées.
+
+## Types
+
+- `size_range` est un `text[]` : les colonnes du tableau de mesures et du techpack en dérivent. **Ne jamais hardcoder `['XS','S','M','L','XL','2XL']`** dans un composant. Un produit avec une gamme de tailles différente cassera silencieusement.
+- Les mesures sont en **inches** (`value_inches`). Ne pas introduire de conversion cm sans le décider explicitement : une conversion implicite dans un techpack fournisseur est une erreur de production.
+
+## Périmètre
+
+Avant d'ajouter une abstraction "pour plus tard", relire `14-hors-scope.md`. Le projet est mono-utilisateur : pas de couche de permissions, pas de multi-tenant, pas de gestion de conflits d'édition concurrente.
