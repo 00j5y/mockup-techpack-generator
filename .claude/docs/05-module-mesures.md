@@ -99,7 +99,7 @@ Bouton "Exporter l'overlay" dans la toolbar :
 
 **Avant l'export :** masquer les éléments d'UI qui ne doivent pas apparaître dans le PDF (halos de sélection, poignées de drag, grille éventuelle). Sinon on retrouve la poignée bleue de sélection en plein milieu du techpack. Prévoir un état `isExporting` qui désactive ces décorations le temps du `toDataURL`.
 
-**Piège CORS :** si l'image de fond vient d'un domaine sans en-tête CORS approprié, le canvas est "tainted" et `toDataURL` lève une `SecurityError`. Vérifier ce point **dès le premier jour de la Phase 2**, pas à la fin : ça peut imposer de changer la config du bucket Supabase.
+**Piège CORS :** si l'image de fond vient d'un domaine sans en-tête CORS approprié, le canvas est "tainted" et `toDataURL` lève une `SecurityError`. Vérifier ce point **dès le premier jour de la Phase 2**, pas à la fin : ça imposerait de revoir la façon dont les flats sont servis.
 
 ### 7. Zoom et pan
 

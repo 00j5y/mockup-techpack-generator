@@ -1,18 +1,50 @@
 services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: constitue
+      POSTGRES_PASSWORD: constitue
+      POSTGRES_DB: constitue_studio
+    ports:
+      # Expose sur l'hote pour que `bun run dev` et drizzle-kit y accedent
+      # directement, sans passer par le conteneur applicatif.
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U constitue -d constitue_studio']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - '3000:3000'
     env_file:
       - .env.local
     environment:
-      # Ecrasent ce que .env.local pourrait contenir : en conteneur, Chromium
-      # vient du systeme, pas du telechargement Puppeteer.
+      # Depuis le conteneur, la base se joint par son nom de service, pas par
+      # localhost : ecrase la valeur de .env.local qui vise l'hote.
+      DATABASE_URL: postgres://constitue:constitue@db:5432/constitue_studio
+      # En conteneur, Chromium vient du systeme, pas du telechargement Puppeteer.
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
-      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+      STORAGE_DIR: /app/storage
+    volumes:
+      # Les fichiers uploades survivent a la reconstruction de l'image.
+      - storage-data:/app/storage
     restart: unless-stopped
     # Puppeteer lance Chromium, qui a besoin de plus que les 64 Mo de /dev/shm
     # par defaut. Sans ca, le navigateur crashe sur les pages lourdes.
     shm_size: 1gb
+
+volumes:
+  db-data:
+  storage-data:

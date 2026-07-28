@@ -28,7 +28,7 @@ Routes à ajouter, absentes du tableau initial mais nécessaires :
 
 - **Validation systématique des entrées** avec Zod. Le schéma Zod est la source de vérité du contrat d'API et sert à dériver les types.
 - Réponses d'erreur uniformes : `{ error: string, details?: unknown }` avec le bon code HTTP (400 validation, 401 non authentifié, 404 introuvable, 500 serveur).
-- Toutes les routes vérifient la session Supabase. Pas de route ouverte, même en mono-utilisateur.
+- Pas d'auth pour l'instant (outil personnel en local). À rétablir avant tout déploiement public : voir `01-stack.md`.
 - Les routes de CRUD prennent `product_id` en query ou dans le body selon la méthode, et vérifient que la ressource appartient bien à un produit existant.
 - `runtime = 'nodejs'` explicite sur `/api/generate-techpack` (Puppeteer) et `/api/generate-image`.
 
@@ -43,7 +43,7 @@ Appelé très fréquemment (une frappe dans le tableau de mesures = un appel apr
 Reçoit un dataURL base64 qui peut être volumineux (un PNG en `pixelRatio: 2` d'un flat détaillé). Points d'attention :
 
 - Vérifier la limite de taille de body de la route (configurer si nécessaire)
-- Décoder le base64 côté serveur, uploader le buffer dans Supabase Storage
+- Décoder le base64 côté serveur, écrire le buffer via `lib/storage` (`putDataUrl`)
 - Écraser l'overlay précédent du même flat plutôt qu'accumuler des fichiers orphelins
 
 ### `/api/generate-image` (POST)
@@ -61,6 +61,6 @@ Body attendu : `{ productId, prompt, quality, flatIds }`.
 
 ### `/api/upload`
 
-Le dossier `app/api/upload/` figure dans l'arborescence de la spec. Décision à prendre en Phase 1 : soit une route d'upload générique paramétrée par destination (`flats`, `bom`, `packaging`, `artwork`, `extra`), soit des uploads directs vers Supabase Storage depuis le client avec URL signée.
+Le dossier `app/api/upload/` figure dans l'arborescence de la spec. Décision à prendre en Phase 1 : soit une route d'upload générique paramétrée par destination (`flats`, `bom`, `packaging`, `artwork`, `extra`), soit des écritures dispersées dans chaque route.
 
 Recommandation : **route générique côté serveur**. Elle permet de valider le type MIME, la taille, et de normaliser le chemin de stockage en un seul endroit. Un upload direct depuis le client disperse ces règles.

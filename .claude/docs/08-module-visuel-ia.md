@@ -20,7 +20,7 @@ Sans ces exemples, on va réinventer une formulation moins bonne que celle déj�
 
 ## Construction du prompt
 
-`lib/prompt/buildImagePrompt.ts` est une **fonction pure** : données produit en entrée, string en sortie. Pas de réseau, pas de Supabase. Testable unitairement, sans coût.
+`lib/prompt/buildImagePrompt.ts` est une **fonction pure** : données produit en entrée, string en sortie. Pas de réseau, pas d'accès base. Testable unitairement, sans coût.
 
 Structure du prompt, dans cet ordre (toujours en **anglais**) :
 

@@ -16,4 +16,5 @@ Vérifie que la phase en cours est réellement terminée.
 5. Relis `.claude/docs/12-pieges.md`, section "Les 5 signaux d'alarme architecturaux", et vérifie qu'aucun ne s'applique au code produit dans cette phase
 6. Rapporte honnêtement : ce qui passe, ce qui échoue avec la sortie réelle, ce qui n'a pas pu être vérifié et pourquoi. Ne déclare pas la phase terminée si un item reste non vérifié.
 7. Mets à jour `.claude/PROGRESS.md`
-8. Si tout passe : demande à Jay s'il veut push + PR. **N'exécute ni l'un ni l'autre sans sa réponse explicite.**
+8. **Remets à Jay sa recette de test manuel** : une case à cocher par test, la commande à copier-coller, et ce qu'il doit voir. Uniquement ce que lui seul peut juger ou ce que je n'ai pas pu exécuter. Pas de `typecheck`/`lint`/`build`, c'est déjà fait. Format et critères dans `.claude/docs/11-git-workflow.md`, section "Fin de phase".
+9. **Attends sa confirmation.** Push et PR seulement après un accord explicite de sa part.

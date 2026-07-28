@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # ---------------------------------------------------------------------------
@@ -50,7 +50,10 @@ FROM oven/bun:1.3-debian AS deps
 WORKDIR /app
 
 # Puppeteer ne telecharge pas Chromium : l'image fournit celui du systeme.
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+# ATTENTION au nom : c'est PUPPETEER_SKIP_DOWNLOAD depuis la v20. L'ancien
+# PUPPETEER_SKIP_CHROMIUM_DOWNLOAD est ignore en silence, le postinstall tente
+# le telechargement et le build casse sur l'absence d'unzip.
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
@@ -61,7 +64,7 @@ RUN bun install --frozen-lockfile
 FROM oven/bun:1.3-debian AS builder
 WORKDIR /app
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=deps /app/node_modules ./node_modules

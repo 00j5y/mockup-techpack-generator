@@ -54,9 +54,11 @@ constitue-studio/
 │   ├── forms/
 │   └── ui/
 ├── lib/
-│   ├── supabase/
-│   │   ├── client.ts                     # client navigateur (anon key)
-│   │   └── server.ts                     # client serveur (service_role)
+│   ├── db/
+│   │   ├── schema.ts                     # schema Drizzle : LA source unique
+│   │   └── index.ts                      # connexion Postgres (serveur only)
+│   ├── storage/
+│   │   └── index.ts                      # fichiers locaux, meme origine que l'app
 │   ├── openai/
 │   │   ├── config.ts                     # id du modèle + table de tarification
 │   │   └── generateImage.ts              # appel API pur
@@ -103,7 +105,7 @@ Test de non-régression du principe : changer la largeur de la colonne 2 dans `h
 
 ## Server Components vs Client Components
 
-- Pages de listing et de détail : **Server Components** par défaut, fetch Supabase côté serveur.
+- Pages de listing et de détail : **Server Components** par défaut, requête Drizzle côté serveur.
 - Formulaires avec auto-save : Client Components (`'use client'`), appel aux routes API.
 - Éditeur canvas : Client Component, chargé en `dynamic(..., { ssr: false })`.
 - Pages de techpack (`components/techpack/templates/*`) : composants purs sans `'use client'`, rendus côté serveur pour Puppeteer **et** réutilisés en preview navigateur.
