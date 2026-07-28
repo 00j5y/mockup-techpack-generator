@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { SaveIndicator, aggregateSaveState } from '@/components/forms/SaveIndicator';
 import { useAutoSavePatch, type SaveState } from '@/components/forms/useAutoSavePatch';
 import { formatTechpackDate } from '@/lib/format';
-import type { Product } from '@/types/product';
+import { primarySampleSize, sortSizes, type Product } from '@/types/product';
 import {
   FIELD_INSET,
   HEADER_BAND,
@@ -23,6 +23,7 @@ import {
 } from './headerLayout';
 import { LogoDropZone, type LogoStatus } from './LogoDropZone';
 import { measureTextPt } from './measureTextPt';
+import { TechpackFontNotice } from './TechpackFontNotice';
 import { useFontsReady } from './useFontsReady';
 
 const pt = (value: number) => `${value}pt`;
@@ -39,11 +40,33 @@ const pt = (value: number) => `${value}pt`;
  * texte imprime ET redimensionne les champs de saisie ci-dessous.
  */
 export function TechpackHeaderEditor({ product }: { product: Product }) {
+  const router = useRouter();
   const [fieldStates, setFieldStates] = useState<
     Record<string, { state: SaveState; error: string | null; retry: () => void }>
   >({});
   const [overflowing, setOverflowing] = useState<Record<string, boolean>>({});
   const [logoStatus, setLogoStatus] = useState<LogoStatus | null>(null);
+
+  /**
+   * Tailles d'echantillon, tenues ICI et non dans `SizeRangeEditor`.
+   *
+   * La note qui designe la taille portant les cotes de la page 2 se lit SOUS le
+   * cadre, hors de la geometrie fixe, et doit suivre la selection en cours et
+   * non la valeur serveur : elle a donc besoin de la meme source que les
+   * encadres rouges.
+   *
+   * Le tri local reproduit celui du serveur (`sortSizes`, ordre XS -> 6XL) : la
+   * reponse du PATCH est triee, une liste locale dans l'ordre des clics
+   * afficherait un `primarySampleSize` different de celui du techpack.
+   */
+  const sampleSizes = useAutoSavePatch<string[]>({
+    url: `/api/products/${product.id}`,
+    field: 'sampleSizes',
+    initial: sortSizes(product.sampleSizes),
+    // Un clic n'a pas de frappe a amortir.
+    delay: 0,
+    onSaved: () => router.refresh(),
+  });
 
   const report = useCallback(
     (key: string, entry: { state: SaveState; error: string | null; retry: () => void }) => {
@@ -51,6 +74,34 @@ export function TechpackHeaderEditor({ product }: { product: Product }) {
     },
     [],
   );
+
+  const {
+    state: sampleState,
+    error: sampleError,
+    retry: sampleRetry,
+    value: selectedSizes,
+  } = sampleSizes;
+  useEffect(() => {
+    report('sampleSizes', { state: sampleState, error: sampleError, retry: sampleRetry });
+  }, [report, sampleState, sampleError, sampleRetry]);
+
+  /**
+   * Bascule : cliquer une taille l'ajoute a l'ensemble ou l'en retire.
+   *
+   * Retirer la derniere est autorise, l'API accepte le tableau vide (brouillon).
+   * Ce qui serait fautif, c'est de le laisser passer sans rien dire : la note
+   * sous le cadre prend le relais.
+   */
+  function toggleSampleSize(size: string) {
+    sampleSizes.setValue(
+      selectedSizes.includes(size)
+        ? selectedSizes.filter((s) => s !== size)
+        : sortSizes([...selectedSizes, size]),
+    );
+  }
+
+  /** LA taille dont les valeurs s'afficheront sur les cotes de la page 2. */
+  const primary = primarySampleSize({ sampleSizes: selectedSizes });
 
   const reportOverflow = useCallback((key: string, isOverflowing: boolean) => {
     setOverflowing((previous) =>
@@ -85,6 +136,9 @@ export function TechpackHeaderEditor({ product }: { product: Product }) {
         </h2>
         <SaveIndicator state={globalState} error={retryLabel} onRetry={retryAll} />
       </div>
+
+      {/* Au-dessus du cadre : ce qui invalide la lecture du cadre lui-meme. */}
+      <TechpackFontNotice />
 
       <div className="overflow-x-auto rounded border border-neutral-300 bg-white p-4">
         <div
@@ -150,19 +204,26 @@ export function TechpackHeaderEditor({ product }: { product: Product }) {
             />
           ))}
 
-          {/* `DATE:` derive de created_at : jamais saisie, donc pas de champ. */}
+          {/* `DATE:` derive de created_at : jamais saisie, donc pas de champ.
+              Rendue comme les autres valeurs : meme encre, meme graisse. */}
           <span
             style={{
               position: 'absolute',
               left: pt(headerSlot('date').valueX),
               top: pt(headerSlot('date').y),
-              color: TP_COLORS.red,
+              color: TP_COLORS.value,
+              fontWeight: TYPO.valueWeight,
             }}
           >
             {formatTechpackDate(product.createdAt)}
           </span>
 
-          <SizeRangeEditor product={product} onStateChange={report} />
+          <SizeRangeEditor
+            sizeRange={product.sizeRange}
+            selected={selectedSizes}
+            primary={primary}
+            onToggle={toggleSampleSize}
+          />
         </div>
       </div>
 
@@ -193,6 +254,23 @@ export function TechpackHeaderEditor({ product }: { product: Product }) {
           par-dessus la colonne suivante.
         </p>
       )}
+
+      {/* Convention de la page 2, rendue sous le cadre et pas dedans : le cadre
+          ne vaut que parce qu'il ressemble au template, et le template n'a
+          qu'un seul style d'encadre. */}
+      {selectedSizes.length === 0 ? (
+        <p className="text-xs text-amber-700">
+          Aucune taille d echantillon : cliquez une taille de la ligne SIZE RANGE. Sans elle, le
+          techpack ne pourra pas etre genere.
+        </p>
+      ) : selectedSizes.length > 1 ? (
+        <p className="text-xs text-neutral-500">
+          {selectedSizes.length} tailles d echantillon. Les cotes de la page 2 n affichent qu une
+          valeur par mesure : ce sont celles de la taille{' '}
+          <span className="font-semibold text-neutral-700">{primary}</span>, la premiere de la
+          gamme.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -236,7 +314,11 @@ function HeaderTextField({
     // police : sans ca, une valeur saisie avant le chargement de Source Sans 3
     // resterait evaluee avec la police de repli, plus large.
     void fontsReady;
-    return measureTextPt(field.value) > slot.valueWidth;
+    // Graisse passee explicitement : les valeurs sont en bold depuis que le
+    // header imite le template, donc plus larges qu'en 400. Mesurer avec une
+    // graisse plus fine ferait sonner l'avertissement trop tard, quand le
+    // debordement est deja imprime.
+    return measureTextPt(field.value, TYPO.valueWeight) > slot.valueWidth;
   }, [field.value, slot.valueWidth, fontsReady]);
 
   // Remontee au parent dans un effet, jamais pendant le rendu : modifier l etat
@@ -267,8 +349,12 @@ function HeaderTextField({
         border: 'none',
         borderBottom: `0.5pt solid ${isOverflowing ? '#b45309' : 'rgba(0,0,0,0.25)'}`,
         background: isOverflowing ? 'rgba(180,83,9,0.12)' : 'transparent',
-        color: TP_COLORS.red,
+        // Meme encre et meme graisse que le rendu print : sans ca, la saisie ne
+        // montrerait plus ce que le PDF imprimera, ce qui est tout l'interet de
+        // saisir dans le cadre a sa geometrie reelle.
+        color: TP_COLORS.value,
         fontSize: pt(TYPO.fontSize),
+        fontWeight: TYPO.valueWeight,
         fontFamily: 'inherit',
         outline: 'none',
       }}
@@ -277,51 +363,52 @@ function HeaderTextField({
 }
 
 /**
- * Ligne `SIZE RANGE:` : la gamme du produit, la taille de reference encadree de
- * rouge. Cliquer une taille la designe comme taille de reference.
+ * Ligne `SIZE RANGE:` : la gamme du produit, chaque taille d'echantillon
+ * encadree de rouge. Cliquer une taille l'ajoute a l'ensemble ou l'en retire :
+ * on peut vouloir produire un sample en M et un en L.
  *
- * `sample_size` pilote trois rendus a la fois (cet encadre, la colonne remplie
- * page 3, les valeurs des cotes page 2) : le changer ici les change tous.
+ * `sample_sizes` pilote plusieurs rendus a la fois (ces encadres, les colonnes
+ * remplies page 3, et via `primarySampleSize` les cotes de la page 2) : ce qui
+ * se coche ici les change tous.
+ *
+ * Composant purement presentationnel : la valeur et son auto-save vivent dans
+ * `TechpackHeaderEditor`, qui en a besoin pour la note sous le cadre.
  */
 function SizeRangeEditor({
-  product,
-  onStateChange,
+  sizeRange,
+  selected,
+  primary,
+  onToggle,
 }: {
-  product: Product;
-  onStateChange: (
-    key: string,
-    entry: { state: SaveState; error: string | null; retry: () => void },
-  ) => void;
+  sizeRange: readonly string[];
+  selected: readonly string[];
+  /** Taille dont les cotes s'affichent page 2. Sert au libelle de survol. */
+  primary: string | null;
+  onToggle: (size: string) => void;
 }) {
-  const router = useRouter();
-  const field = useAutoSavePatch<string | null>({
-    url: `/api/products/${product.id}`,
-    field: 'sampleSize',
-    initial: product.sampleSize,
-    delay: 0,
-    onSaved: () => router.refresh(),
-  });
-
-  const { state, error, retry } = field;
-  useEffect(() => {
-    onStateChange('sampleSize', { state, error, retry });
-  }, [onStateChange, state, error, retry]);
-
   const slot = headerSlot('sizeRange');
   // `valueWidth` est deja "ce qui reste avant la colonne suivante" : pas de
   // largeur de colonne recopiee ici.
-  const listOverflows = sizeListWidth(product.sizeRange) > slot.valueWidth;
+  const listOverflows = sizeListWidth(sizeRange) > slot.valueWidth;
 
   return (
     <>
-      {sizeListPositions(product.sizeRange).map(({ size, x }) => {
-        const isSample = size === field.value;
+      {sizeListPositions(sizeRange).map(({ size, x }) => {
+        const isSample = selected.includes(size);
+        // Le survol dit la consequence du clic, et pour la taille qui porte les
+        // cotes de la page 2, ce qu'elle a de particulier. Le cadre, lui, reste
+        // fidele au template : un seul style d'encadre.
+        const title = !isSample
+          ? `Ajouter ${size} aux tailles d echantillon`
+          : selected.length > 1 && size === primary
+            ? `${size} : taille d echantillon, et celle dont les valeurs s affichent sur les cotes de la page 2. Cliquer pour la retirer`
+            : `${size} : taille d echantillon. Cliquer pour la retirer`;
         return (
           <button
             key={size}
             type="button"
-            onClick={() => field.setValue(size)}
-            title={`Definir ${size} comme taille de reference`}
+            onClick={() => onToggle(size)}
+            title={title}
             style={{
               position: 'absolute',
               // Exactement le meme calcul que `TechpackHeader.tsx` : padding et
@@ -335,8 +422,9 @@ function SizeRangeEditor({
                 isSample ? TP_COLORS.red : 'transparent'
               }`,
               background: 'transparent',
-              color: TP_COLORS.red,
+              color: TP_COLORS.value,
               fontSize: pt(TYPO.fontSize),
+              fontWeight: TYPO.valueWeight,
               fontFamily: 'inherit',
               lineHeight: 1,
               cursor: 'pointer',

@@ -23,17 +23,17 @@ Champs :
 | `category` | select (shirt/pants/jacket/other) | oui |
 | `main_fabric` | text | oui |
 | `description` | textarea | non |
-| `fabric_color_hex` | color picker + champ hex | non |
+| `fabric_pantone_id` | sélecteur dans la bibliothèque Pantone maison, avec création à la volée | non |
 | `fabric_gradient_enabled` | toggle | non |
 | `fabric_gradient_intensity` | select (subtle/medium/strong), visible seulement si toggle actif | non |
 | `size_range` | multi-select, préremplí XS→2XL | non |
-| `sample_size` | select parmi `size_range` | **oui** |
+| `sample_sizes` | multi-select parmi `size_range` | non (mais **requis pour générer le techpack**) |
 | `designer` | text, préremplí "Constitue" | non |
 | `company` | text, préremplí "Constitue" | non |
 | `logo_storage_path` | upload image | non (mais nécessaire au techpack) |
 | `status` | select, préremplí "draft" | non |
 
-`sample_size` est obligatoire parce qu'il pilote trois rendus du techpack : l'encadré rouge du header, la colonne remplie de la page 3 et les valeurs affichées sur les cotes de la page 2. Voir `15-template-seaggs.md`.
+`sample_sizes` accepte plusieurs valeurs : on peut vouloir produire un sample en M et un en L. Trié dans l'ordre canonique de `TECHPACK_SIZE_COLUMNS` et dédoublonné **à l'écriture**, jamais à l'affichage, pour que deux produits portant les mêmes tailles produisent le même techpack. Tableau vide autorisé à l'état brouillon : c'est la génération du techpack qui exige au moins une taille, pas la fiche produit. Il pilote trois rendus : les encadrés rouges du header (un par taille), les colonnes remplies de la page 3 (une par taille), et les valeurs affichées sur les cotes de la page 2, portées uniquement par la première taille dans l'ordre canonique (`primarySampleSize()`). Voir `15-template-seaggs.md`.
 
 `logo_storage_path` alimente le slot logo présent dans le header des 12 pages. **Tranché : champ par produit**, avec une zone de drag-and-drop. Pour éviter de le réuploader à chaque pièce, la création d'un produit **préremplit le logo du produit le plus récent**. Pas de table de réglages globaux, pas de page de settings : une requête sur le dernier produit suffit et le champ reste modifiable pièce par pièce (utile pour une collab ou une sous-marque).
 

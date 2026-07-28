@@ -1,12 +1,13 @@
 #!/usr/bin/env zsh
 #
-# Recette API des routes produit : creation, PATCH, logo, flats, suppression.
+# Recette API des routes produit (creation, PATCH, logo, flats, suppression) et
+# de la bibliotheque Pantone (creation, unicite, recherche, PATCH, suppression).
 #
 # ATTENTION : ce script ne simule rien. Il exige une base Postgres LANCEE
 # (`docker compose up -d db`) et il CREE PUIS SUPPRIME de vraies donnees, en
 # base comme sur le disque de stockage. Toutes les lignes qu'il ecrit portent un
-# `style_number` prefixe `APICHK-<horodatage>`, et il verifie en fin de course
-# qu'il ne reste ni ligne ni fichier de test.
+# `style_number` (ou une `reference` Pantone) prefixe `APICHK-<horodatage>`, et
+# il verifie en fin de course qu'il ne reste ni ligne ni fichier de test.
 #
 # Il lance lui-meme un serveur de dev sur le port 3100 (pas 3000, souvent pris)
 # et l'arrete en sortant. Passer BASE_URL=... pour viser un serveur deja demarre.
@@ -40,6 +41,11 @@ STARTED_SERVER=0
 # Identifiants des produits crees, pour le nettoyage et la verification finale.
 typeset -a CREATED_IDS
 CREATED_IDS=()
+
+# Idem pour la bibliotheque Pantone. Table GLOBALE, non rattachee a un produit :
+# supprimer les produits ne suffit donc pas a la nettoyer.
+typeset -a CREATED_PANTONES
+CREATED_PANTONES=()
 
 typeset -i FAILURES=0
 
@@ -115,6 +121,15 @@ delete_test_products() {
   return 0
 }
 
+delete_test_pantones() {
+  (( ${#CREATED_PANTONES} )) || return 0
+  local id
+  for id in ${CREATED_PANTONES[@]}; do
+    curl -sS --max-time 30 -o /dev/null -X DELETE "$BASE/api/pantones/$id" 2>/dev/null
+  done
+  return 0
+}
+
 cleanup() {
   if (( STARTED_SERVER )); then
     [[ -n $DEV_PID ]] && kill "$DEV_PID" 2>/dev/null
@@ -128,7 +143,10 @@ cleanup() {
   return 0
 }
 
-trap 'delete_test_products; cleanup' EXIT INT TERM
+# Les produits d'abord : `on delete set null` les detacherait sans les casser,
+# mais supprimer d'abord les couleurs rendrait le compte d'usage du point 28
+# dependant de l'ordre de nettoyage.
+trap 'delete_test_products; delete_test_pantones; cleanup' EXIT INT TERM
 
 print -r -- "Recette API : $BASE (marqueur $MARKER)"
 print -r -- "Stockage : $STORAGE_ROOT"
@@ -184,7 +202,7 @@ product_json() {
   local suffix=$1 logo=${2-}
   local logo_field='null'
   [[ -n $logo ]] && logo_field="\"$logo\""
-  print -r -- "{\"dropNumber\":1,\"styleName\":\"API check $suffix\",\"styleNumber\":\"$MARKER-$suffix\",\"category\":\"shirt\",\"description\":null,\"mainFabric\":\"270 GSM cotton interlock\",\"fabricColorHex\":\"#112233\",\"fabricGradientEnabled\":false,\"fabricGradientIntensity\":null,\"sizeRange\":[\"XS\",\"S\",\"M\",\"L\",\"XL\",\"2XL\"],\"sampleSize\":\"M\",\"designer\":\"Constitue\",\"company\":\"Constitue\",\"status\":\"draft\",\"logoStoragePath\":$logo_field}"
+  print -r -- "{\"dropNumber\":1,\"styleName\":\"API check $suffix\",\"styleNumber\":\"$MARKER-$suffix\",\"category\":\"shirt\",\"description\":null,\"mainFabric\":\"270 GSM cotton interlock\",\"fabricPantoneId\":null,\"fabricGradientEnabled\":false,\"fabricGradientIntensity\":null,\"sizeRange\":[\"XS\",\"S\",\"M\",\"L\",\"XL\",\"2XL\"],\"sampleSizes\":[\"M\"],\"designer\":\"Constitue\",\"company\":\"Constitue\",\"status\":\"draft\",\"logoStoragePath\":$logo_field}"
 }
 
 # ---------------------------------------------------------------------------
@@ -203,15 +221,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. sampleSize hors de sizeRange
+# 2. sampleSizes hors de sizeRange
 # ---------------------------------------------------------------------------
 
-body=$(product_json B | jq -c '.sizeRange = ["XS","S"] | .sampleSize = "XL"')
+body=$(product_json B | jq -c '.sizeRange = ["XS","S"] | .sampleSizes = ["XL"]')
 code=$(api_json POST /api/products "$body")
-if [[ $code == 400 ]] && grep -q 'sampleSize' "$BODY"; then
-  ok '2.  sampleSize hors gamme a la creation : 400 mentionnant sampleSize'
+if [[ $code == 400 ]] && grep -q 'sampleSizes' "$BODY"; then
+  ok '2.  sampleSizes hors gamme a la creation : 400 mentionnant sampleSizes'
 else
-  fail '2.  sampleSize hors gamme a la creation' "HTTP $code, attendu 400 citant sampleSize : $(snippet)"
+  fail '2.  sampleSizes hors gamme a la creation' "HTTP $code, attendu 400 citant sampleSizes : $(snippet)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -256,15 +274,18 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. PATCH qui sortirait la taille de reference de la gamme
+# 6. PATCH qui sortirait une taille d echantillon de la gamme
 # ---------------------------------------------------------------------------
+#
+# Le PATCH ne touche qu a `sizeRange` : la verification d inclusion a besoin de
+# la ligne existante, elle vit donc dans la route et pas dans le schema Zod.
 
 code=$(api_json PATCH "/api/products/$PRODUCT_A" '{"sizeRange":["XS","S"]}')
 message=$(json_field '.error')
 if [[ $code == 400 && -n $message ]]; then
-  ok "6.  PATCH sortant la taille de reference de la gamme : 400 - $message"
+  ok "6.  PATCH sortant une taille d echantillon de la gamme : 400 - $message"
 else
-  fail '6.  PATCH sortant la taille de reference de la gamme' "HTTP $code, attendu 400 lisible : $(snippet)"
+  fail '6.  PATCH sortant une taille d echantillon de la gamme' "HTTP $code, attendu 400 lisible : $(snippet)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -459,11 +480,233 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 20. Plusieurs tailles d echantillon, stockees dans l ordre canonique
+# ---------------------------------------------------------------------------
+#
+# La demande d origine : produire un sample en M ET en L. Le corps est envoye
+# dans le desordre (L puis M) pour verifier du meme coup la normalisation :
+# c est le PREMIER element du tableau stocke qui porte les valeurs des cotes de
+# la page 2 (`primarySampleSize`), il ne peut pas dependre de l ordre de saisie.
+
+body=$(product_json G | jq -c '.sampleSizes = ["L","M"]')
+code=$(api_json POST /api/products "$body")
+PRODUCT_D=$(json_field '.id')
+returned=$(json_field '.sampleSizes | join(",")')
+if [[ $code == 201 && -n $PRODUCT_D ]]; then
+  CREATED_IDS+=("$PRODUCT_D")
+  stored=$(sql_scalar "select array_to_string(sample_sizes, ',') from products where id = '$PRODUCT_D'")
+  if [[ $returned == 'M,L' && $stored == 'M,L' ]]; then
+    ok '20. Deux tailles d echantillon : 201, stockees {M,L} dans l ordre canonique'
+  else
+    fail '20. Deux tailles d echantillon' "reponse '$returned', base '$stored', attendu 'M,L' des deux cotes"
+  fi
+else
+  fail '20. Deux tailles d echantillon' "HTTP $code, attendu 201 : $(snippet)"
+fi
+
+# ---------------------------------------------------------------------------
+# 21. Une seule taille du tableau hors de sizeRange suffit a faire echouer
+# ---------------------------------------------------------------------------
+#
+# Reproduit le CHECK `products_sample_sizes_in_range` (`sample_sizes <@
+# size_range`) au niveau du contrat d API : le tableau est valide comme un
+# ENSEMBLE, une taille valide a cote d une invalide ne rattrape rien.
+
+body=$(product_json H | jq -c '.sizeRange = ["XS","S","M"] | .sampleSizes = ["M","XL"]')
+code=$(api_json POST /api/products "$body")
+if [[ $code == 400 ]] && grep -q 'XL' "$BODY"; then
+  ok '21. Taille hors gamme melee a une taille valide : 400 nommant la fautive'
+else
+  fail '21. Taille hors gamme melee a une taille valide' "HTTP $code, attendu 400 citant XL : $(snippet)"
+fi
+
+# ---------------------------------------------------------------------------
+# 22. PATCH multi-tailles puis relecture, et tableau vide accepte
+# ---------------------------------------------------------------------------
+#
+# Le tableau vide est l etat du brouillon : refuse a la creation, accepte au
+# PATCH, bloquant seulement pour la generation du techpack.
+
+code=$(api_json PATCH "/api/products/$PRODUCT_A" '{"sampleSizes":["XL","S"]}')
+patched=$(json_field '.sampleSizes | join(",")')
+empty_code=$(api_json PATCH "/api/products/$PRODUCT_A" '{"sampleSizes":[]}')
+empty_value=$(json_field '.sampleSizes | length')
+if [[ $code == 200 && $patched == 'S,XL' && $empty_code == 200 && $empty_value == 0 ]]; then
+  ok '22. PATCH multi-tailles : ordre canonique S,XL, puis tableau vide accepte'
+else
+  fail '22. PATCH multi-tailles' "PATCH HTTP $code valeur '$patched' (attendu 'S,XL'), vide HTTP $empty_code longueur '$empty_value'"
+fi
+
+# ---------------------------------------------------------------------------
+# 23. Creation d une couleur dans la bibliotheque Pantone
+# ---------------------------------------------------------------------------
+#
+# Corps de creation Pantone. $1 = suffixe de reference, $2 = bibliotheque.
+pantone_json() {
+  local suffix=$1 lib=${2:-TCX}
+  print -r -- "{\"reference\":\"$MARKER-$suffix\",\"library\":\"$lib\",\"name\":\"API check $suffix\",\"hex\":\"#0F4C81\",\"notes\":null}"
+}
+
+code=$(api_json POST /api/pantones "$(pantone_json P1)")
+PANTONE_1=$(json_field '.id')
+if [[ $code == 201 && -n $PANTONE_1 ]]; then
+  CREATED_PANTONES+=("$PANTONE_1")
+  ok "23. Creation d une couleur Pantone : 201, id $PANTONE_1"
+else
+  fail '23. Creation d une couleur Pantone' "HTTP $code, attendu 201 avec un id : $(snippet)"
+fi
+
+# ---------------------------------------------------------------------------
+# 24. Meme couple (reference, library) : 409 qui NOMME la couleur en conflit
+# ---------------------------------------------------------------------------
+#
+# Le cas d usage reel : ressaisir une couleur deja validee des mois plus tard.
+# Un 409 nu ne dirait pas laquelle, seule la nommer permet de choisir entre
+# corriger la saisie et reutiliser la ligne existante.
+
+code=$(api_json POST /api/pantones "$(pantone_json P1)")
+message=$(json_field '.error')
+if [[ $code == 409 && $message == *"$MARKER-P1"* ]]; then
+  ok "24. Doublon (reference, library) : 409 - $message"
+else
+  fail '24. Doublon (reference, library)' "HTTP $code, attendu 409 nommant $MARKER-P1 : $(snippet)"
+fi
+
+# ---------------------------------------------------------------------------
+# 25. Le meme numero dans une AUTRE bibliotheque reste une couleur distincte
+# ---------------------------------------------------------------------------
+#
+# `7545 C` et `7545 U` ne donnent pas la meme couleur : l unicite porte sur le
+# COUPLE, pas sur la seule reference.
+
+code=$(api_json POST /api/pantones "$(pantone_json P1 C)")
+PANTONE_1C=$(json_field '.id')
+if [[ $code == 201 && -n $PANTONE_1C ]]; then
+  CREATED_PANTONES+=("$PANTONE_1C")
+  ok '25. Meme reference en bibliotheque C : 201, couleur distincte'
+else
+  fail '25. Meme reference en bibliotheque C' "HTTP $code, attendu 201 : $(snippet)"
+fi
+
+# ---------------------------------------------------------------------------
+# 26. Liste et recherche
+# ---------------------------------------------------------------------------
+#
+# La recherche porte sur `reference` ET `name`, en « contient » : chercher un
+# fragment doit ramener les deux couleurs du marqueur. Une recherche sans
+# resultat rend une liste vide, jamais une erreur.
+
+code=$(api_json GET '/api/pantones')
+total=$(json_field 'length')
+listed=$(json_field "[.[] | select(.reference == \"$MARKER-P1\")] | length")
+
+search=$(api_json GET "/api/pantones?q=$MARKER-P1")
+found=$(json_field 'length')
+
+empty=$(api_json GET '/api/pantones?q=zzz-aucune-couleur-zzz')
+none=$(json_field 'length')
+
+if [[ $code == 200 && $listed == 2 && $search == 200 && $found == 2 && $empty == 200 && $none == 0 ]]; then
+  ok "26. Liste ($total au total) et recherche : 2 resultats sur $MARKER-P1, 0 sur un terme absent"
+else
+  fail '26. Liste et recherche' "liste HTTP $code ($listed occurrence(s)), recherche HTTP $search ($found), vide HTTP $empty ($none)"
+fi
+
+# ---------------------------------------------------------------------------
+# 27. PATCH d une couleur puis relecture
+# ---------------------------------------------------------------------------
+
+code=$(api_json PATCH "/api/pantones/$PANTONE_1" '{"name":"Classic Blue","hex":"#0F4C81"}')
+patched=$(json_field '.name')
+reread=$(api_json GET "/api/pantones?q=$MARKER-P1")
+stored=$(json_field "[.[] | select(.id == \"$PANTONE_1\")][0].name")
+if [[ $code == 200 && $patched == 'Classic Blue' && $stored == 'Classic Blue' ]]; then
+  ok '27. PATCH d une couleur puis relecture : valeur persistee'
+else
+  fail '27. PATCH d une couleur' "PATCH HTTP $code nom '$patched', relecture HTTP $reread nom '$stored'"
+fi
+
+# ---------------------------------------------------------------------------
+# 28. PATCH qui entre en collision avec une autre ligne : 409
+# ---------------------------------------------------------------------------
+#
+# Renommer une couleur vers un couple deja pris. Le PATCH ne porte que sur
+# `reference` : la `library` vient de la ligne existante, sans quoi le message
+# ne pourrait pas nommer la couleur en conflit.
+
+code=$(api_json POST /api/pantones "$(pantone_json P2)")
+PANTONE_2=$(json_field '.id')
+if [[ $code == 201 && -n $PANTONE_2 ]]; then
+  CREATED_PANTONES+=("$PANTONE_2")
+  code=$(api_json PATCH "/api/pantones/$PANTONE_2" "{\"reference\":\"$MARKER-P1\"}")
+  message=$(json_field '.error')
+  if [[ $code == 409 && $message == *"$MARKER-P1"* ]]; then
+    ok "28. PATCH en collision : 409 - $message"
+  else
+    fail '28. PATCH en collision' "HTTP $code, attendu 409 nommant $MARKER-P1 : $(snippet)"
+  fi
+else
+  fail '28. PATCH en collision' "creation prealable HTTP $code : $(snippet)"
+fi
+
+# ---------------------------------------------------------------------------
+# 29. PATCH produit avec un uuid de couleur inconnu : 400, pas 500
+# ---------------------------------------------------------------------------
+#
+# Zod ne peut pas verifier l EXISTENCE : il ne voit que le corps de la requete.
+# Sans le controle dans la route, la cle etrangere remonterait en 500 illisible.
+
+code=$(api_json PATCH "/api/products/$PRODUCT_A" '{"fabricPantoneId":"6f1c2f7e-0000-4000-8000-000000000000"}')
+message=$(json_field '.error')
+if [[ $code == 400 && $message == *fabricPantoneId* ]]; then
+  ok "29. PATCH produit avec un uuid de couleur inconnu : 400 - $message"
+else
+  fail '29. PATCH produit avec un uuid de couleur inconnu' "HTTP $code, attendu 400 citant fabricPantoneId : $(snippet)"
+fi
+
+# ---------------------------------------------------------------------------
+# 30. DELETE d une couleur : compte d usage et detachement du produit
+# ---------------------------------------------------------------------------
+#
+# `on delete set null` : la suppression ne casse rien, mais elle vide la couleur
+# de tissu des produits concernes. Le compte rendu par la route est la seule
+# facon de savoir ce qu on vient de detacher.
+
+attach=$(api_json PATCH "/api/products/$PRODUCT_A" "{\"fabricPantoneId\":\"$PANTONE_1\"}")
+attached=$(json_field '.fabricPantoneId')
+code=$(api_json DELETE "/api/pantones/$PANTONE_1")
+detached=$(json_field '.detachedProducts')
+api_json GET "/api/products/$PRODUCT_A" >/dev/null
+after=$(json_field '.fabricPantoneId')
+gone=$(api_json GET "/api/pantones?q=$MARKER-P1")
+remaining=$(json_field "[.[] | select(.id == \"$PANTONE_1\")] | length")
+
+if [[ $attach == 200 && $attached == $PANTONE_1 && $code == 200 && $detached == 1 \
+      && -z $after && $remaining == 0 ]]; then
+  ok '30. DELETE d une couleur : 1 produit detache, produit conserve, couleur absente de la liste'
+else
+  fail '30. DELETE d une couleur' "rattachement HTTP $attach ('$attached'), DELETE HTTP $code, detachedProducts '$detached' (attendu 1), couleur du produit apres '$after' (attendu vide), occurrences restantes '$remaining'"
+fi
+
+# ---------------------------------------------------------------------------
+# 31. DELETE et PATCH sur une couleur inexistante : 404
+# ---------------------------------------------------------------------------
+
+del=$(api_json DELETE "/api/pantones/$PANTONE_1")
+patch=$(api_json PATCH "/api/pantones/$PANTONE_1" '{"name":"x"}')
+if [[ $del == 404 && $patch == 404 ]]; then
+  ok '31. DELETE et PATCH sur une couleur supprimee : 404'
+else
+  fail '31. DELETE et PATCH sur une couleur supprimee' "DELETE HTTP $del, PATCH HTTP $patch, attendu 404 des deux cotes"
+fi
+
+# ---------------------------------------------------------------------------
 # Nettoyage et verification qu il ne reste rien
 # ---------------------------------------------------------------------------
 
 print -r -- ''
 delete_test_products
+delete_test_pantones
 
 remaining_products=$(sql_scalar "select count(*) from products where style_number like '$MARKER-%'")
 if [[ $remaining_products == 0 ]]; then
@@ -488,6 +731,13 @@ if [[ $remaining_flats == 0 ]]; then
   ok 'Nettoyage base : aucune ligne product_flats de test restante'
 else
   fail 'Nettoyage base' "$remaining_flats ligne(s) product_flats encore presentes"
+fi
+
+remaining_pantones=$(sql_scalar "select count(*) from pantone_colors where reference like '$MARKER-%'")
+if [[ $remaining_pantones == 0 ]]; then
+  ok 'Nettoyage base : aucune ligne pantone_colors de test restante'
+else
+  fail 'Nettoyage base' "$remaining_pantones ligne(s) pantone_colors '$MARKER-%' encore presentes"
 fi
 
 orphan_dirs=''

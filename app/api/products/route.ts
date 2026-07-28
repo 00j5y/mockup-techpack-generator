@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { products } from '@/lib/db/schema';
-import { listProducts } from '@/lib/db/queries';
+import { fabricPantoneError, listProducts } from '@/lib/db/queries';
 import { apiError, apiValidationError, readJson } from '@/lib/http';
 import { copyIntoProduct, deleteFile } from '@/lib/storage';
 import { productCreateSchema } from '@/lib/validation/product';
@@ -31,6 +31,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const parsed = productCreateSchema.safeParse(await readJson(request));
   if (!parsed.success) return apiValidationError(parsed.error);
+
+  // Verifie AVANT la copie du logo : un 400 apres la copie laisserait un fichier
+  // sur le volume qu'aucune ligne ne referencerait.
+  const pantoneError = await fabricPantoneError(parsed.data.fabricPantoneId);
+  if (pantoneError) return apiError(pantoneError, 400);
 
   // L'identifiant est genere ici, pas par la base : c'est ce qui permet de
   // connaitre le dossier de destination du logo AVANT l'insert, et donc

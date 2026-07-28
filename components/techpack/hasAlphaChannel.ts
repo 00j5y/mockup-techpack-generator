@@ -6,6 +6,12 @@
  * C'est le genre de detail qu'on ne remarque qu'une fois le PDF parti chez le
  * fournisseur, d'ou l'avertissement au depot.
  *
+ * Depuis `removeUniformBackground`, le cas courant est CORRIGE et non plus
+ * seulement signale : cette detection ne sert donc plus que de repli, quand le
+ * detourage n'a pas pu se prononcer (SVG, decodage impossible). Le cas « image
+ * opaque sans fond uni », lui, est deduit directement du rapport de detourage,
+ * sans second decodage.
+ *
  * Navigateur uniquement.
  */
 

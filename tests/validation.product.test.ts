@@ -15,7 +15,7 @@ import {
   flatUploadSchema,
   productCreateSchema,
   productPatchSchema,
-  sampleSizeError,
+  sampleSizesError,
 } from '@/lib/validation/product';
 
 /** Produit valide minimal, base de tous les cas de creation. */
@@ -27,11 +27,11 @@ function validCreateInput() {
     category: 'shirt',
     mainFabric: 'Jersey coton 240g',
     description: 'Tee coupe boxy',
-    fabricColorHex: '#1A1A1A',
+    fabricPantoneId: '3f2b0a5c-1d6e-4f2a-9c3b-8e7d6a5b4c3d',
     fabricGradientEnabled: false,
     fabricGradientIntensity: null,
     sizeRange: ['S', 'M', 'L'],
-    sampleSize: 'M',
+    sampleSizes: ['M'],
     designer: 'Jay',
     company: 'Constitue',
     status: 'draft',
@@ -52,11 +52,50 @@ describe('productCreateSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  test('refuse une taille de reference hors de la gamme, sur le chemin sampleSize', () => {
-    const result = productCreateSchema.safeParse({ ...validCreateInput(), sampleSize: 'XL' });
+  test('accepte plusieurs tailles d echantillon', () => {
+    // La demande d origine : produire un sample en M ET en L.
+    const result = productCreateSchema.safeParse({
+      ...validCreateInput(),
+      sampleSizes: ['M', 'L'],
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.sampleSizes).toEqual(['M', 'L']);
+  });
+
+  test('refuse une taille d echantillon hors de la gamme, sur le chemin sampleSizes', () => {
+    const result = productCreateSchema.safeParse({
+      ...validCreateInput(),
+      sampleSizes: ['M', 'XL'],
+    });
     expect(result.success).toBe(false);
-    expect(issuePaths(result)).toContain('sampleSize');
+    expect(issuePaths(result)).toContain('sampleSizes');
     expect(result.error?.issues[0].message).toMatch(/gamme/i);
+    // Le message doit NOMMER la taille fautive, et elle seule.
+    expect(result.error?.issues[0].message).toContain('XL');
+  });
+
+  /**
+   * L ordre stocke est l ordre canonique du template, pas l ordre de saisie :
+   * le premier element est la taille dont les cotes de la page 2 portent les
+   * valeurs, deux produits aux memes tailles doivent donner le meme techpack.
+   */
+  test('normalise l ordre des tailles d echantillon a l ecriture', () => {
+    const result = productCreateSchema.safeParse({
+      ...validCreateInput(),
+      sizeRange: ['S', 'M', 'L'],
+      sampleSizes: ['L', 'S', 'M'],
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.sampleSizes).toEqual(['S', 'M', 'L']);
+  });
+
+  test('dedoublonne les tailles d echantillon a l ecriture', () => {
+    const result = productCreateSchema.safeParse({
+      ...validCreateInput(),
+      sampleSizes: ['L', 'M', 'L'],
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.sampleSizes).toEqual(['M', 'L']);
   });
 
   test('refuse une categorie inconnue', () => {
@@ -74,7 +113,7 @@ describe('productCreateSchema', () => {
     const result = productCreateSchema.safeParse({
       ...validCreateInput(),
       sizeRange: ['S', '9XL'],
-      sampleSize: 'S',
+      sampleSizes: ['S'],
     });
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContain('sizeRange.1');
@@ -84,26 +123,43 @@ describe('productCreateSchema', () => {
     const result = productCreateSchema.safeParse({
       ...validCreateInput(),
       sizeRange: [],
-      sampleSize: 'M',
+      sampleSizes: ['M'],
     });
     expect(result.success).toBe(false);
   });
 
-  test('exige une taille de reference a la creation', () => {
-    const input: Record<string, unknown> = validCreateInput();
-    input.sampleSize = null;
-    const result = productCreateSchema.safeParse(input);
+  /**
+   * Le tableau vide est valide en base (brouillon) et valide au PATCH, mais la
+   * creation exige au moins une taille : c est l esprit de l ancien
+   * `.extend({ sampleSize: size })`, qui rendait la taille obligatoire alors que
+   * la colonne etait nullable.
+   */
+  test('exige au moins une taille d echantillon a la creation', () => {
+    const result = productCreateSchema.safeParse({ ...validCreateInput(), sampleSizes: [] });
     expect(result.success).toBe(false);
-    expect(issuePaths(result)).toContain('sampleSize');
+    expect(issuePaths(result)).toContain('sampleSizes');
   });
 
-  test('refuse une couleur qui n est pas au format #RRGGBB', () => {
+  test('refuse une taille d echantillon hors des 10 colonnes du template', () => {
     const result = productCreateSchema.safeParse({
       ...validCreateInput(),
-      fabricColorHex: '1A1A1A',
+      sampleSizes: ['M', '9XL'],
     });
     expect(result.success).toBe(false);
-    expect(issuePaths(result)).toContain('fabricColorHex');
+    expect(issuePaths(result)).toContain('sampleSizes.1');
+  });
+
+  test('refuse une couleur de tissu qui n est pas un uuid', () => {
+    // Depuis la bibliotheque Pantone, la couleur du tissu est une REFERENCE, pas
+    // un hex libre : un `#1A1A1A` envoye la n a plus aucun sens. Le format est
+    // le seul controle que le schema puisse faire, l EXISTENCE de l uuid etant
+    // verifiee par les routes produit, qui elles voient la base.
+    const result = productCreateSchema.safeParse({
+      ...validCreateInput(),
+      fabricPantoneId: '#1A1A1A',
+    });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContain('fabricPantoneId');
   });
 
   test('refuse un numero de drop inferieur a 1', () => {
@@ -122,6 +178,32 @@ describe('productPatchSchema', () => {
 
   test('accepte un objet vide', () => {
     expect(productPatchSchema.safeParse({}).success).toBe(true);
+  });
+
+  /**
+   * Le PATCH accepte le tableau vide la ou la creation le refuse : c est la
+   * souplesse du brouillon que portait le `sample_size` nullable. Le blocage
+   * vit dans `techpackBlockers()`, pas dans le contrat d entree.
+   */
+  test('accepte un tableau de tailles d echantillon vide', () => {
+    const result = productPatchSchema.safeParse({ sampleSizes: [] });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ sampleSizes: [] });
+  });
+
+  test('normalise l ordre des tailles d echantillon sur un PATCH', () => {
+    const result = productPatchSchema.safeParse({ sampleSizes: ['2XL', 'M', 'XS'] });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ sampleSizes: ['XS', 'M', '2XL'] });
+  });
+
+  /**
+   * Le PATCH ne voit pas `sizeRange` de la ligne existante : l inclusion
+   * d ensemble n est donc PAS verifiee ici, mais par `sampleSizesError()` dans
+   * la route, apres fusion. Ce test verrouille ce partage de responsabilite.
+   */
+  test('ne verifie pas l appartenance a la gamme, qui se joue apres fusion', () => {
+    expect(productPatchSchema.safeParse({ sampleSizes: ['6XL'] }).success).toBe(true);
   });
 
   /**
@@ -166,11 +248,11 @@ describe('productPatchSchema', () => {
   });
 
   test('normalise en null une chaine vide meme sur un champ au format contraint', () => {
-    // Effacer un champ couleur doit l effacer, pas produire un 400 pendant
-    // l auto-save alors que le regex `#RRGGBB` refuserait la chaine vide.
-    const result = productPatchSchema.safeParse({ fabricColorHex: '  ' });
+    // Detacher la couleur du tissu doit la detacher, pas produire un 400 pendant
+    // l auto-save alors que le format uuid refuserait la chaine vide.
+    const result = productPatchSchema.safeParse({ fabricPantoneId: '  ' });
     expect(result.success).toBe(true);
-    expect(result.data).toEqual({ fabricColorHex: null });
+    expect(result.data).toEqual({ fabricPantoneId: null });
   });
 
   test('trime une valeur entouree d espaces', () => {
@@ -206,20 +288,34 @@ describe('productPatchSchema', () => {
   });
 });
 
-describe('sampleSizeError', () => {
-  test('ne signale rien quand la taille de reference est absente', () => {
-    expect(sampleSizeError(['S', 'M'], null)).toBeNull();
+describe('sampleSizesError', () => {
+  test('ne signale rien sur un tableau vide, l etat d un brouillon', () => {
+    expect(sampleSizesError(['S', 'M'], [])).toBeNull();
   });
 
-  test('ne signale rien quand la taille de reference est dans la gamme', () => {
-    expect(sampleSizeError(['S', 'M', 'L'], 'M')).toBeNull();
+  test('ne signale rien quand toutes les tailles sont dans la gamme', () => {
+    expect(sampleSizesError(['S', 'M', 'L'], ['M', 'L'])).toBeNull();
   });
 
-  test('signale la taille et la gamme quand elle est hors gamme', () => {
-    const error = sampleSizeError(['S', 'M', 'L'], 'XL');
+  test('signale la taille fautive et la gamme, au singulier', () => {
+    const error = sampleSizesError(['S', 'M', 'L'], ['XL']);
     expect(error).not.toBeNull();
     expect(error).toContain('XL');
     expect(error).toContain('S, M, L');
+  });
+
+  /**
+   * Le message doit nommer les tailles fautives, et elles seules : sur un PATCH
+   * de `sizeRange` qui decocherait une taille encore utilisee, savoir laquelle
+   * est la seule information qui permet de corriger.
+   */
+  test('nomme toutes les tailles fautives sans citer les valides', () => {
+    const error = sampleSizesError(['S', 'M'], ['M', 'XL', '3XL']);
+    expect(error).not.toBeNull();
+    expect(error).toContain('XL');
+    expect(error).toContain('3XL');
+    // Avant la parenthese : les fautives. Dedans : la gamme, ou M a sa place.
+    expect(error?.split('(')[0]).not.toMatch(/\bM\b/);
   });
 });
 

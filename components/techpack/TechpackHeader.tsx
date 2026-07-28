@@ -31,8 +31,11 @@ export interface TechpackHeaderData {
   mainFabric: string;
   styleNumber: string;
   sizeRange: readonly string[];
-  /** Encadree de rouge dans la liste des tailles. */
-  sampleSize: string | null;
+  /**
+   * Tailles d'echantillon, chacune encadree de rouge dans la liste des tailles.
+   * Jamais `null`, possiblement vide sur un brouillon.
+   */
+  sampleSizes: readonly string[];
   description: string | null;
   styleName: string;
   /** URL servie par `/api/files/...`, donc a la meme origine que l'app. */
@@ -121,7 +124,10 @@ export function TechpackHeader({ data }: { data: TechpackHeaderData }) {
         </span>
       ))}
 
-      {/* Valeurs saisies : en rouge, comme tout contenu utilisateur du techpack.
+      {/* Valeurs saisies : meme police, meme graisse et meme encre que les
+          libelles (`TP_COLORS.value`), a la demande de Jay. Le header fait ici
+          exception a la regle 10 : le rouge y est reserve a l'encadre des
+          tailles d'echantillon.
           Pas de `overflow: hidden` : une valeur trop longue DOIT deborder
           visiblement sur la colonne suivante. Tronquer ferait disparaitre
           l'information sans que personne le voie, ce que 12-pieges.md designe
@@ -134,7 +140,7 @@ export function TechpackHeader({ data }: { data: TechpackHeaderData }) {
             position: 'absolute',
             left: pt(s.valueX - HEADER_BAND.x),
             top: pt(s.y - HEADER_BAND.y),
-            color: TP_COLORS.red,
+            color: TP_COLORS.value,
             fontWeight: TYPO.valueWeight,
             whiteSpace: 'nowrap',
           }}
@@ -143,29 +149,35 @@ export function TechpackHeader({ data }: { data: TechpackHeaderData }) {
         </span>
       ))}
 
-      <SizeRangeRow sizes={data.sizeRange} sampleSize={data.sampleSize} />
+      <SizeRangeRow sizes={data.sizeRange} sampleSizes={data.sampleSizes} />
     </div>
   );
 }
 
 /**
- * Ligne `SIZE RANGE:` : la gamme du produit, avec la taille de reference
- * encadree de rouge. C'est l'un des trois rendus pilotes par
- * `products.sample_size`, avec la colonne remplie page 3 et les cotes page 2.
+ * Ligne `SIZE RANGE:` : la gamme du produit, avec CHAQUE taille d'echantillon
+ * encadree de rouge. C'est l'un des rendus pilotes par `products.sample_sizes`,
+ * avec les colonnes remplies page 3.
+ *
+ * Les cotes de la page 2 n'affichent qu'une valeur par mesure : c'est
+ * `primarySampleSize()` qui tranche laquelle des tailles la porte. Le header
+ * imprime, lui, ne distingue pas cette taille des autres : le template n'a
+ * qu'un seul style d'encadre, en inventer un second serait une infidelite.
+ * La convention est rendue visible a la saisie, dans `TechpackHeaderEditor`.
  */
 function SizeRangeRow({
   sizes,
-  sampleSize,
+  sampleSizes,
 }: {
   sizes: readonly string[];
-  sampleSize: string | null;
+  sampleSizes: readonly string[];
 }) {
   const slot = headerSlot('sizeRange');
 
   return (
     <>
       {sizeListPositions(sizes).map(({ size, x }) => {
-        const isSample = size === sampleSize;
+        const isSample = sampleSizes.includes(size);
         return (
           <span
             key={size}
@@ -180,10 +192,12 @@ function SizeRangeRow({
               // taille encadree se decale de la largeur de sa bordure par
               // rapport aux autres, et le print ne coincide plus avec l'editeur.
               padding: `${pt(SIZE_LIST.box.paddingY)} ${pt(SIZE_LIST.box.paddingX)}`,
+              // Seul rouge restant dans le header : l'encadre. Le texte de la
+              // taille suit les autres valeurs saisies.
               border: `${pt(SIZE_LIST.box.borderWidth)} solid ${
                 isSample ? TP_COLORS.red : 'transparent'
               }`,
-              color: TP_COLORS.red,
+              color: TP_COLORS.value,
               fontWeight: TYPO.valueWeight,
               whiteSpace: 'nowrap',
             }}

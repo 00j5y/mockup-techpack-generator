@@ -299,6 +299,30 @@ describe('headerLayout : helpers', () => {
   });
 });
 
+describe('headerLayout : typographie du header', () => {
+  /**
+   * Demande de Jay : les valeurs saisies du header sont composees comme les
+   * libelles, en Myriad Pro Bold. Les deux graisses restent nommees separement
+   * mais ne doivent pas pouvoir diverger : une valeur en 400 se distinguerait a
+   * l oeil de son libelle, et surtout serait plus etroite que ce que le PDF
+   * imprime, donc l avertissement de debordement sonnerait trop tard.
+   */
+  test('les valeurs saisies ont la meme graisse que les libelles', () => {
+    expect(TYPO.valueWeight).toBe(TYPO.labelWeight);
+  });
+
+  /**
+   * `measureTextPt` passe cette graisse telle quelle a `ctx.font`. Une graisse
+   * que `next/font` ne charge pas serait synthetisee par le navigateur, avec des
+   * metriques differentes de celles du PDF : la mesure de debordement porterait
+   * alors sur une fonte qui n existe nulle part ailleurs.
+   */
+  test('la graisse du header fait partie de celles reellement chargees', () => {
+    // Poids declares dans `app/layout.tsx` pour Source Sans 3.
+    expect([400, 600, 700]).toContain(TYPO.valueWeight);
+  });
+});
+
 describe('headerLayout : couleurs du techpack', () => {
   test('toutes les couleurs sont des hexadecimaux a 6 chiffres', () => {
     for (const value of Object.values(TP_COLORS)) {
@@ -306,7 +330,22 @@ describe('headerLayout : couleurs du techpack', () => {
     }
   });
 
-  test('le rouge de saisie est le rouge pur impose par la regle 10', () => {
+  test('le rouge du techpack est le rouge pur impose par la regle 10', () => {
     expect(TP_COLORS.red.toUpperCase()).toBe('#FF0000');
+  });
+
+  /**
+   * Dans le header, valeurs et libelles doivent etre indiscernables : meme
+   * graisse (teste plus haut) et meme encre. Le token reste distinct de `frame`
+   * pour pouvoir basculer les valeurs en `#000000` sans deteindre sur les
+   * cadres, separateurs et bordures de tableau du template.
+   */
+  test('l encre des valeurs du header est celle des libelles', () => {
+    expect(TP_COLORS.value.toUpperCase()).toBe(TP_COLORS.frame.toUpperCase());
+  });
+
+  test('l encre des valeurs du header n est pas le rouge', () => {
+    // Seul rouge restant dans le header : l encadre des tailles d echantillon.
+    expect(TP_COLORS.value.toUpperCase()).not.toBe(TP_COLORS.red.toUpperCase());
   });
 });

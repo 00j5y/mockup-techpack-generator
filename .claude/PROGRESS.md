@@ -1,6 +1,6 @@
 # Avancement Constitue Studio
 
-> Dernière mise à jour : 2026-07-28
+> Dernière mise à jour : 2026-07-29
 > À lire en début de session, à mettre à jour en fin de session.
 
 ## État global
@@ -32,19 +32,31 @@ Légende : ⬜ pas commencé, 🟡 en cours, ✅ terminé et mergé
 - [x] Auto-save par champ, debounce 1 s, flush au démontage et à `beforeunload`, retry sans perte de saisie (`useAutoSavePatch.ts`)
 - [x] Upload et suppression des flats, avec confirmation chiffrée de l'impact (points de mesure et callouts supprimés en cascade, couleurs et artworks qui perdent leur ancrage)
 - [x] Routes API : `/api/products`, `/api/products/[id]`, `/api/products/[id]/logo`, `/api/products/[id]/flats`, `/api/products/[id]/flats/[flatId]`, validées par Zod
+- [x] **Bibliothèque Pantone maison** (table globale `pantone_colors`, pas le catalogue officiel sous licence) : couche données complète. Unicité sur le couple `(reference, library)`, CHECK sur `library` et sur le format du hex, `products.fabric_pantone_id` en remplacement de `fabric_color_hex` supprimée, FK `on delete set null`. Routes `/api/pantones` (GET liste + recherche, POST) et `/api/pantones/[id]` (PATCH, DELETE) : le 409 **nomme** la couleur en conflit, le DELETE **rend le nombre de produits détachés**, lu avant la suppression
+- [x] Existence de `fabricPantoneId` vérifiée dans les routes produit (POST et PATCH) : un uuid inconnu répond 400 en nommant le champ, au lieu de remonter en violation de clé étrangère donc en 500 illisible. Zod ne peut pas le faire, il ne voit pas la base
+- [x] Migration `0002_amazing_weapon_omega.sql` générée puis appliquée : crée `pantone_colors`, ajoute `fabric_pantone_id` + son index, et **DROP `products.fabric_color_hex`** (perte de données assumée, décision actée)
+- [x] **Interface de la bibliothèque Pantone** : `PantoneSelect.tsx` (recherche via le `q` de la route, création à la volée, détachement, états chargement / erreur réseau / bibliothèque vide), intégré au formulaire de création de produit (champ facultatif, décision de Jay du 2026-07-29 : le sélecteur apparaît dès la création) et à la fiche produit (`FabricPantoneField.tsx`, auto-save `fabricPantoneId` via `useAutoSavePatch`). Page de gestion `/pantones` (`PantoneLibrary.tsx`) : liste avec le nombre de produits par couleur, édition champ par champ en auto-save, suppression avec confirmation **chiffrée avant** (nombre de produits qui perdent leur couleur) et compte **rendu par l'API** affiché après. Le 409 de doublon est affiché tel quel, à la création comme à l'édition, où l'erreur est écrite sous le champ et pas seulement en infobulle. Le libellé reste dominant, la pastille secondaire : le hex n'est jamais la spécification
+- [x] `listPantoneUsage()` ajoutée à `lib/db/queries.ts` : un `group by` unique pour la page de gestion, au lieu d'un `getPantoneUsage()` par ligne
+- [x] `AutoSaveColor` supprimé de `AutoSaveFields.tsx` : sans appelant, et un champ de couleur libre est exactement la seconde source que la suppression de `fabric_color_hex` a fait disparaître. Un commentaire à sa place dit pourquoi il n'y en a plus
+- [x] Entrée de navigation « Bibliothèque Pantone » dans la coque du dashboard
 - [x] `zod` ajouté en dépendance
-- [x] Suite de tests (`bun test`) : 99 tests, 217 assertions, 5 fichiers, dans `tests/` à la racine plutôt qu'à côté du code testé. `@types/bun` ajouté en devDependency (sinon `tsc --noEmit` échoue sur `bun:test`)
-- [x] Recette API rejouable `scripts/api-check.sh` (`bun run test:api`) : 19 points vérifiés contre un serveur local sur le port 3100, création puis suppression de vraies données, contrôle qu'il ne reste ni ligne ni fichier orphelin
+- [x] Suite de tests (`bun test`) : 151 tests, 339 assertions, 7 fichiers, dans `tests/` à la racine plutôt qu'à côté du code testé. `@types/bun` ajouté en devDependency (sinon `tsc --noEmit` échoue sur `bun:test`)
+- [x] Recette API rejouable `scripts/api-check.sh` (`bun run test:api`) : 31 points vérifiés contre un serveur local sur le port 3100, création puis suppression de vraies données, contrôle qu'il ne reste ni ligne ni fichier orphelin
 - [x] `import 'server-only'` en tête de `lib/db/index.ts` et `lib/storage/index.ts`
 - [x] Robustesse diverse : `apiError` ne sérialise `details` qu'en dehors de la production, `touchProduct()` dans `lib/db/queries.ts` (à appeler par tout module qui dépose ou supprime un flat, pour tenir `products.updated_at` à jour), avertissement à la saisie sur un second flat FRONT ou BACK, `fileUrl()` encode les segments d'URL
+- [x] Détourage automatique du fond uni des logos (`removeUniformBackground.ts`) : un logo déposé avec un fond de couleur uni est détouré avant envoi par diffusion depuis les bords (préserve les blancs intérieurs, contre-formes et texte), anticrénelage adouci, action « garder le fond » dans `LogoDropZone.tsx` si le détourage se trompe
 
 ### Vérifié
 
-- [x] `bun test` : 99 tests, 217 assertions, 5 fichiers : cohérence interne de `headerLayout.ts`, détection de géométrie de header recopiée hors de sa source unique, schémas de validation Zod, helpers de formatage (fuseau, locale), `oneOf` et `fileUrl`
+- [x] `bun test` : 151 tests, 339 assertions, 7 fichiers : cohérence interne de `headerLayout.ts`, détection de géométrie de header recopiée hors de sa source unique, schémas de validation Zod, helpers de formatage (fuseau, locale), `oneOf` et `fileUrl`
 - [x] L'invariant de la règle dure n°2 (géométrie du header à un seul endroit) est désormais vérifié par un test, pas seulement décrit en prose dans `headerLayout.ts`. Test vu échouer avant d'être validé : valeur de colonne modifiée temporairement, échec constaté, valeur restaurée
-- [x] Recette API `scripts/api-check.sh` : 19 points au vert
+- [x] Recette API `scripts/api-check.sh` : 31 points au vert (22 produit + 9 Pantone), nettoyage base et disque vérifié
+- [x] Contraintes de `pantone_colors` constatées en `psql`, pas supposées : doublon `(reference, library)` refusé en 23505, hex `bleu` et `#GGG` refusés par le CHECK, `library` hors des 4 valeurs refusée, suppression d'une couleur référencée met bien `products.fabric_pantone_id` à NULL sans supprimer le produit
+- [x] **Bug trouvé et corrigé par cette recette** : `isUniqueViolation()` testait `code` et `constraint_name` sur l'objet d'erreur reçu, alors que Drizzle emballe l'erreur du pilote dans une `DrizzleQueryError` et range la `PostgresError` dans `cause`. Le helper rendait donc toujours `false` et le 409 de la bibliothèque sortait en 500 avec le SQL complet. Corrigé en parcourant la chaîne de `cause` (profondeur bornée)
 - [x] `bun run typecheck`, `bun run lint`, `bun run build` passent
 - [x] Stack Docker complet vérifié, l'app crée une ligne en base depuis le conteneur
+- [x] **Interface Pantone recettée dans le navigateur, contrôlée en `psql` à chaque étape** (données de test créées puis supprimées, base et disque revérifiés vides à la fin) : création de deux couleurs, 409 de doublon affiché tel quel à la création ET à l'édition (la ligne en base reste intacte), auto-save de l'édition (notes puis référence restaurée), sélection à la création d'un produit (`fabric_pantone_id` porte bien l'uuid choisi), changement depuis la fiche produit, détachement (colonne à NULL), suppression d'une couleur utilisée : confirmation annonçant « 1 produit(s) perdent leur couleur de tissu », compte rendu par l'API affiché après, produit conservé avec `fabric_pantone_id` à NULL
+- [x] **Piège du `<form>` imbriqué** : la création de couleur à la volée vit à l'intérieur du `<form>` de création de produit. Pas de balise `<form>` dans `PantoneCreateForm`, et Entrée intercepté sur ses champs : vérifié dans le navigateur, Entrée crée la couleur, le formulaire produit n'est pas soumis (`submit` jamais déclenché, aucune ligne produit créée)
 
 ### Revue de code du 2026-07-28
 
@@ -76,6 +88,7 @@ Phase 2, branche `feature/measurement-canvas`, après recette manuelle de Jay et
 - [ ] **Prompts IA de référence** : les prompts rédigés manuellement qui ont donné de bons résultats ne sont pas dans le repo. Nécessaires avant d'écrire `buildImagePrompt.ts` (Phase 5). À placer dans `.claude/docs/prompts-reference/`
 - [ ] **Modèle OpenAI** : identifiant exact et tarification à confirmer contre la doc officielle avant la Phase 5
 - [ ] **Auth : bloquant AVANT DÉPLOIEMENT, pas maintenant.** L'app n'a aucune authentification. Sans conséquence en local. Sur un VPS public, n'importe qui trouvant l'URL peut lire et modifier les données, et surtout déclencher `/api/generate-image`, qui coûte de l'argent réel.
+- [ ] **Licence Myriad Pro sur un serveur : bloquant AVANT DÉPLOIEMENT, pas maintenant.** La licence Adobe couvre l'usage desktop et l'embarquement dans un PDF généré, pas l'installation du fichier de police sur un serveur de génération automatique. Tant que la génération tourne sur la machine de Jay, c'est un usage desktop. Sur un VPS, la question reste ouverte : à trancher avant tout déploiement public. Voir `15-template-seaggs.md`, section Typographie.
 
 ## Bloquants résolus
 
@@ -103,7 +116,7 @@ Phase 2, branche `feature/measurement-canvas`, après recette manuelle de Jay et
 | 2026-07-27 | Plusieurs Pantone par artwork via table `artwork_pantones` | L'exemple en montre 3 sur un seul élément |
 | 2026-07-27 | **Aucun filigrane**, ni Seaggs ni Constitue. Zones de contenu en blanc pur | Décision de Jay |
 | 2026-07-27 | **Canvas libre** pour les pages 7, 8-9 et 10-12, pas d'auto-layout | Décision de Jay. `AnnotatedCanvas` existe déjà après la Phase 2, et les pages 5-6 imposent déjà un canvas : un auto-layout aurait créé deux paradigmes de saisie |
-| 2026-07-27 | **Source Sans 3** à la place de Myriad Pro | Myriad Pro n'existe sur la machine que dans le cache obfusqué Adobe Fonts, et sa licence ne couvre pas l'installation sur un serveur de génération. Métriques différentes : ajustement à prévoir sur la barre de titre et le header |
+| 2026-07-27 | **Source Sans 3** à la place de Myriad Pro | Myriad Pro n'existait alors sur la machine que dans le cache obfusqué Adobe Fonts, et sa licence ne couvre pas l'installation sur un serveur de génération. Métriques différentes : ajustement à prévoir sur la barre de titre et le header. **Mis à jour le 2026-07-28** : Jay a depuis obtenu un vrai fichier Bold, voir la ligne du 2026-07-28 ci-dessous et `15-template-seaggs.md` |
 | 2026-07-27 | **Logo : champ par produit**, zone de drag-and-drop, préremplí depuis le produit le plus récent | Décision de Jay. Évite une table de réglages globaux tout en évitant de réuploader à chaque pièce |
 | 2026-07-27 | **Le header se saisit en place**, à sa géométrie réelle, pas dans un formulaire séparé | Décision de Jay. Le bloc apparaît sur les 12 pages : le voir juste tout de suite évite de découvrir un débordement de texte à la génération |
 | 2026-07-27 | **Postgres auto-hébergé en Docker**, pas MySQL ni Firestore | MySQL n'a ni `text[]` ni `check` sur tableau : réécriture complète pour zéro gain. Firestore ferait de `getFullProduct()` du N+1 et supprimerait toutes les contraintes, dont les 12 cascades |
@@ -115,11 +128,16 @@ Phase 2, branche `feature/measurement-canvas`, après recette manuelle de Jay et
 | 2026-07-28 | Pas de route `/api/upload` générique | L'upload écrit un fichier ET une ligne en base, les séparer exposerait à un fichier sans ligne ou l'inverse. La validation MIME et le plafond de taille sont déjà centralisés dans `lib/storage`, ce qui était la raison d'être de la route générique |
 | 2026-07-28 | `size_range` restreint aux 10 colonnes du tableau page 3 à la saisie, bien que la base accepte un `text[]` libre | Une taille hors de ces colonnes n'aurait aucune colonne où s'afficher et disparaîtrait silencieusement à la génération |
 | 2026-07-28 | Le logo pré-rempli est **dupliqué** côté serveur à la création, pas partagé | Sans ça, deux produits pointeraient sur le même fichier et supprimer le premier casserait le second |
-| 2026-07-28 | La taille de référence se change dans le header (clic sur la taille, encadré rouge), et la case correspondante est verrouillée dans la gamme de tailles | Décocher produirait un 400 sans issue évidente, à cause du CHECK `products_sample_size_in_range` |
+| 2026-07-28 | Les tailles d'échantillon se togglent directement dans le `SIZE RANGE:` du header (clic sur une taille, un encadré rouge par taille sélectionnée) ; `sample_sizes` est un tableau, pas une valeur unique | Demande de Jay : on peut vouloir produire un sample en M et un en L. Retirer la dernière taille est autorisé, le CHECK `products_sample_sizes_in_range` (`sample_sizes <@ size_range`) accepte le tableau vide comme état brouillon |
 | 2026-07-28 | Connexion Postgres paresseuse via un `Proxy` dans `lib/db/index.ts` | Pour que `next build` n'exige pas `DATABASE_URL` |
 | 2026-07-28 | Tests dans `tests/` à la racine, pas à côté du code testé | Un des tests scanne `components/` à la recherche de littéraux de géométrie du header : un fichier de test posé à côté du code contiendrait ces littéraux et se signalerait lui-même |
 | 2026-07-28 | `import 'server-only'` en tête de `lib/db/index.ts` et `lib/storage/index.ts` | La frontière serveur ne doit pas dépendre du seul mot-clé `type` à l'import : un import oublié doit faire échouer le build, pas fuiter `DATABASE_URL` dans le bundle client |
 | 2026-07-28 | Intensité de dégradé : affichage « non renseignée » plutôt qu'un repli sur `medium` suivi d'un PATCH automatique | Un écrit en base déclenché par un simple affichage contredirait l'auto-save par champ, et produirait en Phase 5 un prompt construit sur une intensité que Jay n'a jamais validée |
+| 2026-07-28 | La page 2 n'affiche qu'une valeur par cote : c'est la **taille primaire**, premier élément de `sample_sizes` dans l'ordre canonique de `TECHPACK_SIZE_COLUMNS`, exposée par `primarySampleSize()` | Le tri et le dédoublonnage se font à l'écriture et non à l'affichage, pour que deux produits portant les mêmes tailles produisent le même techpack quel que soit l'ordre de saisie |
+| 2026-07-28 | Les valeurs saisies du bloc header sont en noir bold (`TP_COLORS.value`, `#231F20`), même graisse que les libellés, plutôt qu'en rouge | Demande de Jay. L'encadré rouge de `SIZE RANGE:` n'est pas concerné, seul le texte change. Le reste du techpack (pages 2 à 12) n'est pas encore construit et reste sous la règle du rouge |
+| 2026-07-29 | La couleur du tissu est une **référence** vers une bibliothèque Pantone maison, plus un hex libre : `products.fabric_color_hex` supprimée au profit de `fabric_pantone_id` | Un hex libre à côté d'une référence crée deux sources pour une même couleur, qui divergent au premier changement. Le hex vit sur la ligne Pantone, et il reste **indicatif** : c'est le couple `(reference, library)` qui part chez le teinturier. Le catalogue officiel est sous licence, d'où une bibliothèque alimentée au fil des validations fournisseur |
+| 2026-07-29 | Plus de choix de couleur dans le formulaire de création de produit | La sélection se fait dans la bibliothèque depuis la fiche produit. Garder un color picker à la création aurait recréé la seconde source que la suppression de `fabric_color_hex` élimine |
+| 2026-07-28 | Myriad Pro Bold n'est pas versionné, servi par l'application via `/api/fonts/[...path]` et monté en lecture seule dans le conteneur | Fichier lourd sans rapport avec le code (demande de Jay), et la licence Adobe ne couvre pas la redistribution ; Source Sans 3 reste seule police Regular et sert de repli |
 
 ## Modèle Claude par tâche
 
@@ -146,4 +164,4 @@ Décidé avec Jay le 2026-07-27. Principe retenu : **le relecteur n'est jamais l
 Ce qui surgit en cours de dev et ne doit pas polluer la branche en cours :
 
 - Générer le visuel IA directement dans la zone image de la page 1 (Cover) : le template y réserve 370 pt de haut sur toute la largeur, c'est exactement l'usage
-- Le paragraphe Pantone de la page 6 pourrait injecter le vrai `fabric_color_hex` du produit dans son exemple, comme l'a fait l'auteur de l'exemple Seaggs
+- Le paragraphe Pantone de la page 6 pourrait injecter la vraie couleur de tissu du produit dans son exemple (`fabric_pantone_id` → `pantoneLabel()` et son hex), comme l'a fait l'auteur de l'exemple Seaggs

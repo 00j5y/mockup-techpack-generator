@@ -17,6 +17,8 @@ import {
   TECHPACK_SIZE_COLUMNS,
   fileUrl,
   oneOf,
+  primarySampleSize,
+  sortSizes,
 } from '@/types/product';
 
 describe('oneOf', () => {
@@ -81,6 +83,62 @@ describe('fileUrl', () => {
   test('laisse intact un chemin deja sur', () => {
     const safePath = 'products/8f1c/flat_front-01.png';
     expect(fileUrl(safePath)).toBe(`/api/files/${safePath}`);
+  });
+});
+
+describe('sortSizes', () => {
+  test('ordonne selon les colonnes du template, pas alphabetiquement', () => {
+    // Un tri alphabetique rendrait ['2XL', 'M', 'S', 'XS'] : c est exactement le
+    // bug que ce helper existe pour empecher.
+    expect(sortSizes(['2XL', 'M', 'XS', 'S'])).toEqual(['XS', 'S', 'M', '2XL']);
+  });
+
+  test('retire les doublons', () => {
+    expect(sortSizes(['L', 'M', 'L', 'M'])).toEqual(['M', 'L']);
+  });
+
+  test('laisse le tableau vide intact', () => {
+    expect(sortSizes([])).toEqual([]);
+  });
+
+  test('ne modifie pas le tableau d entree', () => {
+    const input = ['L', 'S'];
+    sortSizes(input);
+    expect(input).toEqual(['L', 'S']);
+  });
+
+  test('repousse en fin de liste une taille inconnue plutot que de la perdre', () => {
+    // Une donnee anormale doit rester visible : la supprimer en silence ferait
+    // disparaitre de l information sans que personne le voie.
+    expect(sortSizes(['9XL', 'M'])).toEqual(['M', '9XL']);
+  });
+});
+
+describe('primarySampleSize', () => {
+  /**
+   * Le contrat : la taille dont les cotes de la page 2 portent les valeurs.
+   * Le header et la page 3 en affichent plusieurs, la page 2 une seule.
+   */
+  test('rend la premiere taille dans l ordre canonique', () => {
+    expect(primarySampleSize({ sampleSizes: ['M', 'L'] })).toBe('M');
+  });
+
+  test('ignore l ordre de saisie : deux produits aux memes tailles s accordent', () => {
+    expect(primarySampleSize({ sampleSizes: ['L', 'M'] })).toBe(
+      primarySampleSize({ sampleSizes: ['M', 'L'] }),
+    );
+  });
+
+  /**
+   * Tri defensif : une ligne ecrite hors des routes API (script, psql) pourrait
+   * porter un tableau non normalise. Le contrat doit tenir quand meme.
+   */
+  test('trie meme un tableau stocke dans le desordre', () => {
+    expect(primarySampleSize({ sampleSizes: ['2XL', 'S'] })).toBe('S');
+  });
+
+  test('rend null sur un brouillon sans taille d echantillon', () => {
+    expect(primarySampleSize({ sampleSizes: [] })).toBeNull();
   });
 });
 

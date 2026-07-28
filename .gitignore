@@ -51,3 +51,10 @@ next-env.d.ts
 
 # stockage local des fichiers (dev)
 /.storage
+
+# polices locales : binaires lourds, sans rapport avec le code, et la licence
+# Adobe de Myriad Pro ne couvre pas sa redistribution. Le dossier reste present
+# dans le depot avec son mode d'emploi. Voir assets/fonts/README.md.
+/assets/fonts/*
+!/assets/fonts/.gitkeep
+!/assets/fonts/README.md

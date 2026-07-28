@@ -8,6 +8,20 @@
       "when": 1785198282498,
       "tag": "0000_fair_gabe_jones",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785205032595,
+      "tag": "0001_funny_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785277203754,
+      "tag": "0002_amazing_weapon_omega",
+      "breakpoints": true
     }
   ]
 }

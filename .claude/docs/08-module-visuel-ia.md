@@ -25,7 +25,7 @@ Sans ces exemples, on va réinventer une formulation moins bonne que celle déj�
 Structure du prompt, dans cet ordre (toujours en **anglais**) :
 
 1. **Contexte photo studio** : type de prise de vue, éclairage, fond, cadrage
-2. **Tissu** : `main_fabric` + description qualitative de la couleur dérivée de `fabric_color_hex`
+2. **Tissu** : `main_fabric` + description qualitative de la couleur dérivée du `hex` de la ligne `pantone_colors` référencée par `fabric_pantone_id`
 3. **Dégradé** : formulation adaptée à `fabric_gradient_intensity` si `fabric_gradient_enabled`
 4. **Détails de construction** : dérivés du BOM et des callouts (hardware, coutures, cordons, zips)
 5. **Style et rendu final**
@@ -35,6 +35,8 @@ Structure du prompt, dans cet ordre (toujours en **anglais**) :
 Un modèle d'image ne comprend pas `#3F3F41`. Il faut une description textuelle : `"dark charcoal grey with a slight cool undertone"`.
 
 Implémentation : conversion hex → HSL, puis classification (teinte / saturation / luminosité) vers un vocabulaire contrôlé. Fonction séparée et testée, par exemple `lib/prompt/describeColor.ts`. Toujours mentionner **aussi le code hex** dans le prompt en complément de la description : certains modèles l'exploitent.
+
+> **Le hex vient de la bibliothèque Pantone, il n'est pas saisi sur le produit.** Depuis la Phase 1, la couleur du tissu est une référence Pantone (`fabric_pantone_id` → `pantone_colors`), et le `hex` de cette ligne est un **indicatif d'écran**, pas la spécification. Deux conséquences pour le prompt : le hex peut être une approximation grossière de la teinture réelle, et `fabric_pantone_id` peut être `null` (produit sans couleur arrêtée), auquel cas le prompt doit se passer de toute mention de couleur plutôt que d'inventer une valeur par défaut. Mentionner **aussi la référence Pantone elle-même** (`pantoneLabel()`) dans le prompt : c'est le seul identifiant non ambigu de la teinte.
 
 ### Formulation du dégradé
 

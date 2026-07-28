@@ -8,7 +8,7 @@
 
 1. **Format paysage custom `761.4 x 581.4 pt`.** Ni A4, ni Letter, ni portrait.
 2. **Toujours 12 pages**, y compris vides. Pas de pagination dynamique.
-3. **Tout ce que l'utilisateur renseigne s'affiche en rouge `#FF0000`**, la structure du template en noir `#231F20` et gris `#CCCCCC`.
+3. **Tout ce que l'utilisateur renseigne s'affiche en rouge `#FF0000`**, la structure du template en noir `#231F20` et gris `#CCCCCC`. Deux exceptions déjà tranchées : les valeurs du bloc header (bold, noir, en place depuis la Phase 1) et le texte des cellules BOM (noir). Le reste de ce module reste à construire : si Jay veut du noir ailleurs (cotes, lettres POI, pins, tableau page 3), ce sera une décision explicite à prendre au moment de coder cette phase, pas une extrapolation silencieuse de la règle du header. Voir la règle dure n°10 de `CLAUDE.md`.
 
 ## Flux
 
@@ -46,7 +46,7 @@ Le bloc header est identique sur les 12 pages : slot logo + 3 colonnes de libell
 
 Règle absolue : **un seul composant `TechpackHeader.tsx`**, alimenté par l'objet produit, importé par chaque page. Zéro duplication de markup, zéro duplication de données. Les seules props qui varient d'une page à l'autre sont le titre et le numéro de page, donc ils appartiennent au composant.
 
-`SIZE RANGE:` affiche la liste statique des tailles avec **la taille de référence encadrée en rouge**, dérivée de `products.sample_size`.
+`SIZE RANGE:` affiche la liste des tailles de `size_range`, avec **chaque taille d'échantillon encadrée en rouge** (un rectangle par taille), dérivée de `products.sample_sizes`. Les valeurs saisies du header (COMPANY, DESIGNER, etc.) sont elles en noir bold, pas en rouge : voir la règle dure n°10 de `CLAUDE.md`.
 
 ## Mise en page pour Puppeteer
 
@@ -115,9 +115,9 @@ Une seule fonction `getFullProduct(productId)` retournant un objet typé complet
 - [ ] **Chaque page a été comparée visuellement à `template-reference/exemple-p-NN.jpg`**
 - [ ] Le header est identique sur les 12 pages et vient d'un seul composant
 - [ ] Le slot logo du header est rempli
-- [ ] La taille de référence est encadrée en rouge dans le header, et c'est la même que la colonne remplie page 3
+- [ ] Chaque taille d'échantillon est encadrée en rouge dans le header, et ce sont les mêmes que les colonnes remplies page 3
 - [ ] Les bandes grises et le cadre apparaissent (pas de `printBackground` oublié)
-- [ ] Tout le contenu utilisateur est en rouge, toute la structure en noir ou gris
+- [ ] Tout le contenu utilisateur est en rouge, toute la structure en noir ou gris (sauf les valeurs du bloc header, déjà en noir bold depuis la Phase 1, et le texte des cellules BOM)
 - [ ] Page 2 : front et back sur la même page, séparateur vertical au bon endroit
 - [ ] Page 3 : les 10 colonnes de tailles sont présentes, 17 lignes, valeurs dans la colonne de la taille de référence
 - [ ] Page 4 : grille 4x3, lettres rouges en haut à gauche, cellules vides propres

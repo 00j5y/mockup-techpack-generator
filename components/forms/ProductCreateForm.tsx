@@ -2,14 +2,17 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { PantoneSelect } from '@/components/forms/PantoneSelect';
 import { LOGO_SLOT, TP_COLORS } from '@/components/techpack/headerLayout';
 import {
+  DEFAULT_SIZE_RANGE,
   GRADIENT_INTENSITIES,
   PRODUCT_CATEGORIES,
   PRODUCT_STATUSES,
   TECHPACK_SIZE_COLUMNS,
   fileUrl,
   type GradientIntensity,
+  type PantoneColor,
   type Product,
   type ProductCategory,
   type ProductStatus,
@@ -30,7 +33,19 @@ const labelClass = 'block text-xs font-medium uppercase tracking-wide text-neutr
 const inputClass =
   'w-full rounded border border-neutral-300 px-2 py-1.5 text-sm focus:border-neutral-900 focus:outline-none';
 
-const DEFAULT_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL'];
+/**
+ * Taille d echantillon proposee par defaut.
+ *
+ * La base impose `sample_sizes <@ size_range` : si un jour `DEFAULT_SIZE_RANGE`
+ * ne contient plus cette taille, le formulaire demarrerait sur un etat que l API
+ * refuserait. D ou le repli sur la premiere taille de la gamme.
+ */
+const PREFERRED_SAMPLE_SIZE = 'L';
+const DEFAULT_SAMPLE_SIZES: readonly string[] = DEFAULT_SIZE_RANGE.includes(
+  PREFERRED_SAMPLE_SIZE,
+)
+  ? [PREFERRED_SAMPLE_SIZE]
+  : [DEFAULT_SIZE_RANGE[0]];
 
 const pt = (value: number) => `${value}pt`;
 
@@ -43,11 +58,24 @@ export function ProductCreateForm({ prefilledLogoPath }: { prefilledLogoPath: st
   const [category, setCategory] = useState<ProductCategory>('shirt');
   const [mainFabric, setMainFabric] = useState('');
   const [description, setDescription] = useState('');
-  const [fabricColorHex, setFabricColorHex] = useState('');
+  /**
+   * Couleur du tissu, FACULTATIVE a la creation.
+   *
+   * L'objet entier est garde ici, et pas seulement son identifiant, pour
+   * afficher le libelle sans requete supplementaire ; seul l'identifiant part
+   * dans le corps du POST. Un produit se cree souvent avant que le lab dip soit
+   * valide : la couleur reste alors `null` et se choisit plus tard sur la fiche.
+   */
+  const [fabricPantone, setFabricPantone] = useState<PantoneColor | null>(null);
   const [gradientEnabled, setGradientEnabled] = useState(false);
   const [gradientIntensity, setGradientIntensity] = useState<GradientIntensity>('medium');
-  const [sizeRange, setSizeRange] = useState<string[]>(DEFAULT_SIZES);
-  const [sampleSize, setSampleSize] = useState('L');
+  // `DEFAULT_SIZE_RANGE` est en lecture seule (`as const`) et l'etat est mutable :
+  // on copie. La liste ne se recopie PAS dans ce fichier, 12-pieges.md l'interdit
+  // explicitement (une gamme differente casserait en silence).
+  const [sizeRange, setSizeRange] = useState<string[]>([...DEFAULT_SIZE_RANGE]);
+  // Plusieurs tailles possibles : on peut vouloir produire un sample en M et un
+  // en L. L'API en exige au moins une a la creation.
+  const [sampleSizes, setSampleSizes] = useState<string[]>([...DEFAULT_SAMPLE_SIZES]);
   const [designer, setDesigner] = useState('Constitue');
   const [company, setCompany] = useState('Constitue');
   const [status, setStatus] = useState<ProductStatus>('draft');
@@ -64,11 +92,33 @@ export function ProductCreateForm({ prefilledLogoPath }: { prefilledLogoPath: st
       : TECHPACK_SIZE_COLUMNS.filter((s) => sizeRange.includes(s) || s === size);
     if (next.length === 0) return;
     setSizeRange(next);
-    if (!next.includes(sampleSize)) setSampleSize(next[0]);
+    // La base impose `sample_sizes <@ size_range` : une taille retiree de la
+    // gamme ne peut plus servir d'echantillon. On ne la remplace pas d'office,
+    // ce serait choisir a la place de Jay une taille qui pilote la page 2 ; la
+    // selection peut donc devenir vide, et le formulaire le dit.
+    setSampleSizes((previous) => previous.filter((s) => next.includes(s)));
   }
+
+  function toggleSampleSize(size: string) {
+    setSampleSizes((previous) =>
+      previous.includes(size)
+        ? previous.filter((s) => s !== size)
+        : // Ordre canonique XS -> 6XL, le meme que celui applique par l'API :
+          // c'est lui qui determine la taille portant les cotes de la page 2.
+          sizeRange.filter((s) => previous.includes(s) || s === size),
+    );
+  }
+
+  const noSampleSize = sampleSizes.length === 0;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    // Garde-fou : l'API refuse un tableau vide a la creation. Le dire ici evite
+    // un aller-retour reseau pour un 400 previsible.
+    if (noSampleSize) {
+      setError('Choisissez au moins une taille d echantillon.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
 
@@ -83,11 +133,14 @@ export function ProductCreateForm({ prefilledLogoPath }: { prefilledLogoPath: st
           category,
           mainFabric,
           description: description.trim() === '' ? null : description,
-          fabricColorHex: fabricColorHex.trim() === '' ? null : fabricColorHex.toUpperCase(),
+          // REFERENCE a la bibliotheque, jamais un hex libre : un hex saisi ici
+          // recreerait la seconde source qu'a supprimee `fabric_color_hex`.
+          // Facultatif, `null` est un etat legitime a la creation.
+          fabricPantoneId: fabricPantone?.id ?? null,
           fabricGradientEnabled: gradientEnabled,
           fabricGradientIntensity: gradientEnabled ? gradientIntensity : null,
           sizeRange,
-          sampleSize,
+          sampleSizes,
           designer,
           company,
           status,
@@ -198,25 +251,16 @@ export function ProductCreateForm({ prefilledLogoPath }: { prefilledLogoPath: st
         />
       </div>
 
+      <div className="space-y-1">
+        <span className={labelClass}>Couleur du tissu (optionnel)</span>
+        <PantoneSelect value={fabricPantone} onChange={setFabricPantone} />
+        <p className="text-xs text-neutral-400">
+          Choisie dans la bibliotheque, ou creee a la volee si le nuancier fournisseur vient
+          d arriver. Modifiable ensuite depuis la fiche produit.
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-1">
-          <span className={labelClass}>Couleur du tissu</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={/^#[0-9a-fA-F]{6}$/.test(fabricColorHex) ? fabricColorHex : '#000000'}
-              onChange={(event) => setFabricColorHex(event.target.value.toUpperCase())}
-              className="h-8 w-10 cursor-pointer rounded border border-neutral-300"
-            />
-            <input
-              type="text"
-              placeholder="#RRGGBB"
-              value={fabricColorHex}
-              onChange={(event) => setFabricColorHex(event.target.value.trim().toUpperCase())}
-              className={`${inputClass} font-mono`}
-            />
-          </div>
-        </div>
         <div className="space-y-1">
           <span className={labelClass}>Degrade de tissu</span>
           <label className="flex items-center gap-2 text-sm">
@@ -265,25 +309,41 @@ export function ProductCreateForm({ prefilledLogoPath }: { prefilledLogoPath: st
       </div>
 
       <div className="space-y-1">
-        <label className={labelClass} htmlFor="sampleSize">
-          Taille de reference
-        </label>
-        <select
-          id="sampleSize"
-          value={sampleSize}
-          onChange={(event) => setSampleSize(event.target.value)}
-          className={`${inputClass} max-w-40`}
-        >
-          {sizeRange.map((size) => (
-            <option key={size} value={size}>
-              {size}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-neutral-400">
-          Pilote l encadre rouge du header, la colonne remplie page 3 et les valeurs des cotes
-          page 2.
-        </p>
+        <span className={labelClass}>Tailles d echantillon</span>
+        {/* Seules les tailles de la gamme sont proposees : la base impose
+            `sample_sizes <@ size_range`. */}
+        <div className="flex flex-wrap gap-1">
+          {sizeRange.map((size) => {
+            const checked = sampleSizes.includes(size);
+            return (
+              <button
+                key={size}
+                type="button"
+                onClick={() => toggleSampleSize(size)}
+                aria-pressed={checked}
+                className={`rounded border px-2 py-1 text-xs font-medium ${
+                  checked
+                    ? 'border-red-600 bg-red-50 text-red-700'
+                    : 'border-neutral-300 text-neutral-600 hover:border-neutral-500'
+                }`}
+              >
+                {size}
+              </button>
+            );
+          })}
+        </div>
+        {noSampleSize ? (
+          <p className="text-xs font-medium text-red-600">
+            Au moins une taille est obligatoire.
+          </p>
+        ) : (
+          <p className="text-xs text-neutral-400">
+            Pilote les encadres rouges du header et les colonnes remplies page 3. Les cotes de la
+            page 2 n affichent qu une valeur par mesure : celles de{' '}
+            <span className="font-medium text-neutral-600">{sampleSizes[0]}</span>, la premiere de
+            la gamme.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -375,7 +435,8 @@ export function ProductCreateForm({ prefilledLogoPath }: { prefilledLogoPath: st
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={submitting || noSampleSize}
+        title={noSampleSize ? 'Choisissez au moins une taille d echantillon' : undefined}
         className="rounded bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
       >
         {submitting ? 'Creation...' : 'Creer le produit'}

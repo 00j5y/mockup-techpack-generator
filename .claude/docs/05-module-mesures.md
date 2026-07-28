@@ -68,7 +68,7 @@ Mode "ligne" dans la toolbar. Clic-glisser du point de départ au point d'arriv�
 - **Embouts perpendiculaires** à chaque extrémité, formant un `⊢⊣`. **Pas de flèches** : c'est une cote de type architectural. La spec initiale disait "flèches aux deux bouts", c'était une erreur de lecture du template.
 - Valeur en rouge au format `"26 inches"`, placée au-dessus du trait pour une cote horizontale, à côté pour une verticale
 - **Lettre POI en rouge, dans un corps nettement plus grand que la valeur**, près d'une extrémité du trait
-- La valeur affichée est celle de la **taille de référence** (`products.sample_size`), pas de toutes les tailles
+- La valeur affichée est celle de la **taille primaire** (`primarySampleSize()`, premier élément de `products.sample_sizes` dans l'ordre canonique de `TECHPACK_SIZE_COLUMNS`), pas de toutes les tailles d'échantillon
 
 Stockage : `x_percent`/`y_percent` pour le départ, `end_x_percent`/`end_y_percent` pour l'arrivée.
 

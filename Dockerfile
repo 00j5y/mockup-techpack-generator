@@ -15,9 +15,10 @@
 # ---------------------------------------------------------------------------
 FROM oven/bun:1.3-debian AS chromium-base
 
-# fonts-liberation et fonts-noto : polices de repli pour Chromium. La police du
-# techpack (Source Sans 3) est servie par l'application elle-meme via next/font,
-# pas par le systeme, mais Chromium a besoin d'un jeu de base.
+# fonts-liberation et fonts-noto : polices de repli pour Chromium. Les polices du
+# techpack sont servies par l'application elle-meme, pas par le systeme :
+# Source Sans 3 par next/font, Myriad Pro Bold par /api/fonts/[...path] depuis
+# /app/assets/fonts. Chromium a quand meme besoin d'un jeu systeme de base.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium \
       fonts-liberation \
@@ -120,6 +121,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # stack existante il faut le supprimer :
 #   docker compose down && docker volume rm <projet>_storage-data
 RUN mkdir -p /app/storage && chown nextjs:nodejs /app/storage
+
+# Point de montage des polices locales. Le contenu vient de l'hote, monte en
+# LECTURE SEULE par docker-compose : Myriad Pro Bold n'est ni dans le depot ni
+# dans l'image. Le dossier est cree ici pour que l'image reste coherente meme
+# sans montage : la route repond alors 404 et l'application retombe sur
+# Source Sans 3. Voir assets/fonts/README.md.
+RUN mkdir -p /app/assets/fonts && chown -R nextjs:nodejs /app/assets
 
 USER nextjs
 ENV HOME=/home/nextjs

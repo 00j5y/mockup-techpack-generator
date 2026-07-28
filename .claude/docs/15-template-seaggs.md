@@ -57,7 +57,8 @@ Conséquence pratique : **toutes les coordonnées de ce fichier restent exprimé
 |---|---|---|
 | `--tp-frame` | `#231F20` | Cadre extérieur, séparateurs, bordures de tableau |
 | `--tp-bar` | `#CCCCCC` | Fond de la barre de titre et du bloc header |
-| `--tp-red` | `#FF0000` | **Tout ce que l'utilisateur renseigne** : cotes, valeurs, lettres POI, pins, lettres de cellule BOM, texte d'instruction Pantone |
+| `--tp-red` | `#FF0000` | Cotes, lettres POI, pins, lettres de cellule BOM, texte d'instruction Pantone, encadrés de taille d'échantillon. **Ne couvre plus les valeurs saisies du bloc header**, voir `TP_COLORS.value` ci-dessous |
+| `TP_COLORS.value` (`headerLayout.ts`) | `#231F20` | Valeurs saisies **dans le bloc header uniquement** (company, designer, date, main fabric, style number, description, style name) : même encre et même graisse (bold) que les libellés. Décision de Jay du 2026-07-28. L'encadré rouge de `SIZE RANGE:` n'est pas concerné, il reste rouge |
 | `--tp-white` | `#FFFFFF` | Fond des zones de contenu |
 
 Le rouge mesuré est `#FC0000` sur les traits de cote et `#FF0000` sur les textes : c'est la même couleur source (CMJN 0/100/100/0) convertie différemment. Utiliser un seul token `#FF0000`.
@@ -68,19 +69,25 @@ Le rouge mesuré est `#FC0000` sur les traits de cote et `#FF0000` sur les texte
 
 Le template utilise **Myriad Pro** (Robert Slimbach et Carol Twombly, Adobe, 1992). Bold pour les libellés, Regular pour les valeurs.
 
-**Substitut retenu : Source Sans 3** (Paul D. Hunt, Adobe, 2012, licence OFL). Même éditeur, même classification humaniste, librement redistribuable.
+**État réel depuis le 2026-07-28 : Jay a installé un vrai fichier `~/Library/Fonts/Myriad Pro Bold.ttf`.** Vérifié : police Adobe authentique (OpenType à table `CFF`, 839 glyphes, version 2.007), pas une conversion dégradée ni une police système. Ce n'est plus le cache obfusqué Adobe Fonts décrit plus bas dans cette section historique.
 
-Pourquoi ne pas utiliser Myriad Pro directement, alors que Jay y a accès via son abonnement Creative Cloud :
+**Bold seulement.** Jay n'a pas le fichier Regular. **Source Sans 3** (Paul D. Hunt, Adobe, 2012, licence OFL) reste chargée : elle couvre tout ce qui n'est pas en gras, et sert de repli si le fichier Bold venait à manquer.
 
-- Sur sa machine, la police n'existe **pas en fichier propre**. Elle est livrée par la synchronisation Adobe Fonts dans `~/Library/Application Support/Adobe/CoreSync/plugins/livetype/.r/`, sous forme de fichiers cachés à noms obfusqués (`.15496.otf`...). Aucun `MyriadPro-Bold.otf` dans `/Library/Fonts` ni `~/Library/Fonts`.
-- Ce cache est géré par Creative Cloud, lié à l'abonnement actif, et son contenu peut être réorganisé par une mise à jour. En dépendre pour un build Docker est fragile.
-- La licence Adobe Fonts couvre l'usage desktop et **l'embarquement dans un PDF**, mais pas l'installation du fichier de police sur un serveur qui génère des documents automatiquement. C'est exactement notre cas d'usage sur le VPS.
+**Le fichier n'est pas versionné.** Binaire lourd sans rapport avec le code (demande de Jay), et la licence Adobe ne couvre pas sa redistribution. Il vit dans `assets/fonts/`, ignoré par git, avec un `README.md` versionné qui explique quoi y déposer et comment le retrouver sur la machine de Jay.
 
-À noter : le PDF de sortie, lui, n'est pas le problème. Embarquer une police dans un PDF généré est un usage normal et permis. La contrainte porte uniquement sur le fichier de police présent dans l'image Docker.
+Comment le fichier atteint Chromium, qui tourne dans le conteneur Debian et ne voit rien de macOS :
 
-**Métriques différentes** : Source Sans 3 n'est pas métriquement compatible avec Myriad Pro, les largeurs de texte vont différer légèrement. Comme le template est en positions absolues, l'ajustement se fait au cas par cas (corps, `letter-spacing`) sur les zones où l'écart se voit : barre de titre et libellés du header, présents sur les 12 pages. À valider visuellement en Phase 4 contre `exemple-p-01.jpg`.
+1. `docker-compose.yml` monte `./assets/fonts` en lecture seule dans le conteneur.
+2. `app/api/fonts/[...path]/route.ts` sert le dossier à la **même origine** que l'application.
+3. `app/globals.css` déclare la famille CSS `Myriad Pro`, graisse **700**, via cette route. Pile complète : `'Myriad Pro', 'Source Sans 3', sans-serif`.
 
-Convention : libellé en **bold**, valeur en **regular**, sur la même ligne, même corps.
+Volontairement **pas de `next/font/local`**, qui exigerait le fichier au moment du build : un clone frais sans le fichier doit pouvoir construire l'app (`bun run build` passe, la route répond `404`, le navigateur retombe sur Source Sans 3 via `font-display: swap`). Si la police manque, un bandeau prévient dans l'éditeur de header. Voir les deux pièges de détection dans `12-pieges.md`.
+
+**Question de licence, ouverte avant tout déploiement.** La licence Adobe Fonts couvre l'usage desktop et **l'embarquement dans un PDF généré**, ce qui reste vrai et n'a pas changé. Ce qu'elle ne couvre pas : l'installation du fichier de police sur un serveur qui génère des documents automatiquement. Tant que la génération tourne sur la machine de Jay, c'est un usage desktop, sans problème. Sur un VPS, la question reste entière : à trancher avant tout déploiement public, voir le bloquant correspondant dans `PROGRESS.md`.
+
+**Métriques différentes** : Source Sans 3 n'est pas métriquement compatible avec Myriad Pro, les largeurs de texte vont différer légèrement sur tout ce qui reste en Source Sans 3. Comme le template est en positions absolues, l'ajustement se fait au cas par cas (corps, `letter-spacing`) sur les zones où l'écart se voit. À valider visuellement en Phase 4 contre `exemple-p-01.jpg`.
+
+Convention : libellé en **bold**, valeur en **regular**, sur la même ligne, même corps. Exception : dans le bloc header, la valeur est en bold elle aussi (voir « Bloc header » ci-dessous et la règle dure n°10 de `CLAUDE.md`).
 
 ## Structure commune à toutes les pages
 
@@ -131,9 +138,11 @@ Structure : un **slot logo** à gauche, puis **3 colonnes de libellés**.
 
 Les `y` ci-dessus sont les `yMin` du texte, corps ~10pt, interligne ~24pt.
 
-**`SIZE RANGE:`** affiche la liste statique `XS  S  M  L  XL  2XL  ______` à partir de `x = 359`, et **la taille de référence est encadrée d'un rectangle rouge**. Dans l'exemple c'est `XL`.
+Les valeurs saisies (`COMPANY:`, `DESIGNER:`, etc.) sont rendues dans la même graisse que les libellés (**bold**, `TYPO.valueWeight` = 700 dans `headerLayout.ts`) et dans la même encre (`TP_COLORS.value`, `#231F20`), pas en rouge. Décision de Jay du 2026-07-28, voir la règle dure n°10 de `CLAUDE.md`.
 
-Note : dans l'exemple Seaggs, le rectangle rouge est sur `XL` alors que la colonne remplie page 3 est `L`. C'est une incohérence de l'auteur. Dans notre app les deux dérivent du même champ `products.sample_size`, donc le cas ne peut pas se produire.
+**`SIZE RANGE:`** affiche la liste réelle des tailles de `size_range` à partir de `x = 359` (le pas horizontal et la largeur de case sont estimés, voir `headerLayout.ts`), et **chaque taille d'échantillon (`products.sample_sizes`) est encadrée d'un rectangle rouge**, un rectangle par taille sélectionnée. Dans l'exemple Seaggs, une seule taille est encadrée (`XL`) : c'est le cas particulier d'un tableau à un seul élément.
+
+Note : dans l'exemple Seaggs, le rectangle rouge est sur `XL` alors que la colonne remplie page 3 est `L`. C'est une incohérence de l'auteur. Dans notre app, le header et la page 3 dérivent tous deux du même champ `products.sample_sizes` (toutes les tailles y sont représentées des deux côtés), donc ce cas précis ne peut plus se produire. La page 2, elle, n'affiche qu'**une seule** valeur par cote : c'est la taille primaire qui la porte, `primarySampleSize()`, le premier élément de `sample_sizes` dans l'ordre canonique de `TECHPACK_SIZE_COLUMNS`. Voir `types/product.ts` et la section « Taille de référence » de `12-pieges.md`.
 
 ---
 
@@ -175,7 +184,7 @@ Des **encarts de détail flottants** peuvent être placés librement par-dessus,
 - Traits **rouges épais** (~4 pt), avec des **embouts perpendiculaires** à chaque extrémité (forme `⊢⊣`), **pas de flèches**. C'est une cote de type architectural.
 - Valeur en rouge, format `"26 inches"`, placée au-dessus du trait pour une cote horizontale, à côté pour une verticale.
 - **Lettre POI en rouge, dans un corps nettement plus grand** que la valeur, placée près d'une extrémité du trait.
-- Les valeurs affichées sont celles de la **taille de référence** (`products.sample_size`) uniquement, pas de toutes les tailles.
+- Les valeurs affichées sont celles de la **taille primaire** (`primarySampleSize(product)`, premier élément de `products.sample_sizes` dans l'ordre canonique) uniquement, pas de toutes les tailles d'échantillon.
 
 ## Page 3 : MEASUREMENTS (SPECIFICATIONS)
 
@@ -285,8 +294,8 @@ Composition d'un élément :
 
 2. **Six pages sur douze sont des canvas d'annotation libre** (2, 5, 6, 7, 8, 10-12). L'éditeur de mesures de la Phase 2 n'est donc pas un module isolé : c'est **la primitive centrale de l'application**. Voir `05-module-mesures.md`.
 
-3. **Tout ce que l'utilisateur renseigne est en rouge**, tout ce qui est structure de template est en noir ou gris. Une seule règle à respecter partout.
+3. **Tout ce que l'utilisateur renseigne est en rouge, sauf les valeurs du bloc header** (bold, noir `#231F20`, comme les libellés, depuis le 2026-07-28) **et le texte des cellules BOM** (page 4, noir). Le reste du template est en noir ou gris. Cette règle a déjà changé une fois (header) et n'est pas garantie stable pour les pages 3 à 12, pas encore construites : voir la règle dure n°10 de `CLAUDE.md`.
 
 4. **Le slot logo du header exige une image de marque** au niveau du produit ou de la config globale.
 
-5. **La taille de référence** (`sample_size`) pilote à la fois l'encadré rouge du header et la colonne remplie page 3 et les valeurs affichées page 2.
+5. **Les tailles d'échantillon** (`sample_sizes`, un tableau) pilotent à la fois les encadrés rouges du header (un par taille) et les colonnes remplies de la page 3 (une par taille). La page 2, elle, n'affiche qu'une valeur par cote : c'est la taille primaire, `primarySampleSize()` (premier élément dans l'ordre canonique), qui la porte.

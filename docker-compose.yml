@@ -37,9 +37,19 @@ services:
       PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
       PUPPETEER_SKIP_DOWNLOAD: 'true'
       STORAGE_DIR: /app/storage
+      # Racine des polices locales, servie par /api/fonts/[...path].
+      FONTS_DIR: /app/assets/fonts
     volumes:
       # Les fichiers uploades survivent a la reconstruction de l'image.
       - storage-data:/app/storage
+      # Myriad Pro Bold n'est ni dans le depot ni dans l'image : on la monte
+      # depuis l'hote, en lecture seule. Chromium tourne dans ce conteneur et ne
+      # voit pas les polices installees sur macOS ; sans ce montage le PDF
+      # sortirait en Source Sans 3 alors que le navigateur de Jay afficherait
+      # Myriad Pro. Le dossier peut etre vide : la route repond alors 404 et
+      # l'application retombe sur Source Sans 3.
+      # Voir assets/fonts/README.md.
+      - ./assets/fonts:/app/assets/fonts:ro
     restart: unless-stopped
     # Puppeteer lance Chromium, qui a besoin de plus que les 64 Mo de /dev/shm
     # par defaut. Sans ca, le navigateur crashe sur les pages lourdes.

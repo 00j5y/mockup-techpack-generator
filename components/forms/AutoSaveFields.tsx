@@ -180,76 +180,17 @@ export function AutoSaveSelect<T extends string>({
   );
 }
 
-export function AutoSaveColor({
-  url,
-  field,
-  label,
-  initial,
-  hint,
-}: {
-  url: string;
-  field: string;
-  label: string;
-  initial: string | null;
-  hint?: string;
-}) {
-  const router = useRouter();
-  const auto = useAutoSavePatch<string | null>({
-    url,
-    field,
-    initial,
-    onSaved: () => router.refresh(),
-  });
-
-  /**
-   * Texte affiche, tape caractere par caractere.
-   *
-   * Il est tenu a part de `auto.value` : `#1A2B3C` passe par `#1`, `#1A`,
-   * `#1A2`... et envoyer chacun de ces etats intermediaires produit un PATCH
-   * rejete en 400 des qu'une seconde s'ecoule au milieu de la saisie.
-   */
-  const [draft, setDraft] = useState(initial ?? '');
-  const isValid = draft === '' || /^#[0-9a-fA-F]{6}$/.test(draft);
-
-  return (
-    <Row
-      label={label}
-      hint={hint}
-      indicator={
-        <SaveIndicator state={auto.state} error={auto.error} onRetry={auto.retry} />
-      }
-    >
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          value={isValid && draft !== '' ? draft : '#000000'}
-          onChange={(event) => {
-            // Le selecteur natif ne peut produire qu'un hex complet.
-            const next = event.target.value.toUpperCase();
-            setDraft(next);
-            auto.setValue(next);
-          }}
-          className="h-8 w-10 cursor-pointer rounded border border-neutral-300"
-        />
-        <input
-          type="text"
-          value={draft}
-          placeholder="#RRGGBB"
-          onChange={(event) => {
-            const next = event.target.value.trim().toUpperCase();
-            setDraft(next);
-            // Rien ne part tant que la valeur n'est pas complete : une chaine
-            // vide vaut "pas de couleur", un hex partiel ne vaut rien du tout.
-            if (next === '') auto.setValue(null);
-            else if (/^#[0-9A-F]{6}$/.test(next)) auto.setValue(next);
-          }}
-          onBlur={auto.flush}
-          className={`${inputClass} font-mono ${isValid ? '' : 'border-red-400'}`}
-        />
-      </div>
-    </Row>
-  );
-}
+/**
+ * Il n'y a volontairement PAS de champ de couleur libre ici.
+ *
+ * Un `AutoSaveColor` generique a existe dans ce fichier, sans appelant. Il est
+ * supprime avec l'arrivee du selecteur Pantone : une couleur de ce domaine est
+ * une REFERENCE de bibliotheque (`PantoneSelect`), pas un hex saisi a la main.
+ * Garder le composant aurait entretenu la possibilite de reintroduire la
+ * seconde source que la suppression de `products.fabric_color_hex` a fait
+ * disparaitre. Le seul endroit ou un hex se saisit est la fiche d'une couleur
+ * de la bibliotheque, et il y est explicitement indicatif.
+ */
 
 export function AutoSaveToggle({
   url,
@@ -297,22 +238,23 @@ export function AutoSaveToggle({
 /**
  * Gamme de tailles.
  *
- * La taille de reference ne peut pas etre decochee ici : la base impose
- * `sample_size = any(size_range)`, et laisser decocher produirait un 400 sans
- * issue evidente. Le changement de taille de reference se fait dans le header,
- * la ou l'encadre rouge est visible.
+ * Une taille utilisee comme taille d'echantillon ne peut pas etre decochee
+ * ici : la base impose `sample_sizes <@ size_range`, et laisser decocher
+ * produirait un 400 sans issue evidente. Le choix des tailles d'echantillon se
+ * fait dans le header, la ou les encadres rouges sont visibles.
  */
 export function AutoSaveSizeRange({
   url,
   label,
   initial,
-  sampleSize,
+  sampleSizes,
   options,
 }: {
   url: string;
   label: string;
   initial: string[];
-  sampleSize: string | null;
+  /** Tailles verrouillees parce qu'elles servent d'echantillon. Jamais `null`. */
+  sampleSizes: readonly string[];
   options: readonly string[];
 }) {
   const router = useRouter();
@@ -343,14 +285,18 @@ export function AutoSaveSizeRange({
       <div className="flex flex-wrap gap-1">
         {options.map((size) => {
           const checked = auto.value.includes(size);
-          const locked = size === sampleSize;
+          const locked = sampleSizes.includes(size);
           return (
             <button
               key={size}
               type="button"
               disabled={locked}
               onClick={() => toggle(size)}
-              title={locked ? 'Taille de reference : la changer dans le header d abord' : undefined}
+              title={
+                locked
+                  ? 'Taille d echantillon : la retirer dans le header d abord'
+                  : undefined
+              }
               className={`rounded border px-2 py-1 text-xs font-medium ${
                 checked
                   ? 'border-neutral-900 bg-neutral-900 text-white'

@@ -8,33 +8,15 @@
  */
 
 import { z } from 'zod';
+import { emptyToNull, text } from '@/lib/validation/common';
 import {
   FLAT_TYPES,
   GRADIENT_INTENSITIES,
   PRODUCT_CATEGORIES,
   PRODUCT_STATUSES,
   TECHPACK_SIZE_COLUMNS,
+  sortSizes,
 } from '@/types/product';
-
-const text = z.string().trim();
-const hex = z
-  .string()
-  .trim()
-  .regex(/^#[0-9a-fA-F]{6}$/, 'couleur attendue au format #RRGGBB');
-
-/**
- * Normalise le « vide » d'un champ texte nullable : `''` devient `null`.
- *
- * Sans ca, vider DESCRIPTION depuis le header enregistre `''` alors que le
- * formulaire de creation enregistre `null` : deux representations du meme vide
- * cohabitent en base, et un `is null` en Phase 4 en raterait la moitie.
- *
- * A appliquer a tout champ texte nullable, y compris ceux dont le sous-schema
- * refuserait la chaine vide (hex, `min(1)`) : cote saisie, effacer un champ doit
- * l'effacer, pas produire une erreur 400 pendant l'auto-save.
- */
-const emptyToNull = (value: unknown) =>
-  typeof value === 'string' && value.trim() === '' ? null : value;
 
 /**
  * Les tailles saisissables sont les 10 colonnes du tableau page 3.
@@ -46,6 +28,21 @@ const emptyToNull = (value: unknown) =>
 const size = z.enum(TECHPACK_SIZE_COLUMNS, {
   error: `taille attendue parmi ${TECHPACK_SIZE_COLUMNS.join(', ')}`,
 });
+
+/**
+ * Tailles d'echantillon, normalisees A L'ECRITURE.
+ *
+ * Le tri suit l'ordre canonique du template et non l'ordre de saisie, et les
+ * doublons sautent : le premier element du tableau stocke est donc toujours la
+ * taille dont les cotes de la page 2 portent les valeurs (voir
+ * `primarySampleSize()` dans `types/product.ts`). Normaliser ici plutot qu'a
+ * l'affichage garantit que deux produits portant les memes tailles produisent le
+ * meme techpack.
+ *
+ * Tableau vide accepte : c'est l'etat d'un brouillon, comme le `sample_size`
+ * nullable qu'il remplace. La creation, elle, en exige au moins une.
+ */
+const sampleSizes = z.array(size).transform(sortSizes);
 
 /**
  * Champs de `products`, sans valeur par defaut.
@@ -69,7 +66,15 @@ const productFields = z.strictObject({
   }),
   mainFabric: text.min(1, 'obligatoire'),
   description: z.preprocess(emptyToNull, text.nullable()),
-  fabricColorHex: z.preprocess(emptyToNull, hex.nullable()),
+  /**
+   * Reference vers la bibliotheque Pantone, ou `null` pour detacher.
+   *
+   * L'EXISTENCE de l'uuid n'est PAS verifiee ici : le schema Zod ne voit que le
+   * corps de la requete, pas la base. Les routes produit interrogent
+   * `getPantoneColor()` avant d'ecrire, faute de quoi un uuid inconnu
+   * remonterait en violation de cle etrangere, donc en 500 illisible.
+   */
+  fabricPantoneId: z.preprocess(emptyToNull, z.uuid('identifiant de couleur invalide').nullable()),
   fabricGradientEnabled: z.boolean(),
   // `null` explicite accepte : c'est la valeur qui remet l'intensite a
   // « non renseignee », distincte de l'absence du champ dans un PATCH partiel.
@@ -79,7 +84,7 @@ const productFields = z.strictObject({
     })
     .nullable(),
   sizeRange: z.array(size).min(1, 'au moins une taille'),
-  sampleSize: size.nullable(),
+  sampleSizes,
   designer: text.min(1, 'obligatoire'),
   company: text.min(1, 'obligatoire'),
   status: z.enum(PRODUCT_STATUSES, {
@@ -88,9 +93,11 @@ const productFields = z.strictObject({
 });
 
 /**
- * Creation. `sampleSize` y est obligatoire alors qu'il est nullable en base :
- * il pilote trois rendus du techpack (encadre rouge du header, colonne remplie
- * page 3, valeurs des cotes page 2), autant l'exiger tout de suite.
+ * Creation. `sampleSizes` y exige AU MOINS UNE taille alors que la base accepte
+ * le tableau vide : ces tailles pilotent trois rendus du techpack (encadres
+ * rouges du header, colonnes remplies page 3, valeurs des cotes page 2), autant
+ * les exiger tout de suite. Le tableau vide reste la souplesse du brouillon,
+ * atteignable par PATCH.
  *
  * `logoStoragePath` n'apparait qu'ici : le formulaire de creation pre-remplit le
  * logo du produit le plus recent, la route se charge ensuite d'en dupliquer le
@@ -98,12 +105,16 @@ const productFields = z.strictObject({
  */
 export const productCreateSchema = productFields
   .extend({
-    sampleSize: size,
+    sampleSizes: z.array(size).min(1, 'au moins une taille d echantillon').transform(sortSizes),
     logoStoragePath: z.preprocess(emptyToNull, text.min(1).nullable()),
   })
-  .refine((value) => value.sizeRange.includes(value.sampleSize), {
-    message: 'la taille de reference doit faire partie de la gamme',
-    path: ['sampleSize'],
+  // `superRefine` et pas `refine` : le message doit NOMMER les tailles fautives,
+  // ce qu'un message statique ne peut pas faire.
+  .superRefine((value, ctx) => {
+    const conflict = sampleSizesError(value.sizeRange, value.sampleSizes);
+    if (conflict) {
+      ctx.addIssue({ code: 'custom', message: conflict, path: ['sampleSizes'] });
+    }
   });
 
 /** Mise a jour partielle, un champ a la fois dans le cas de l'auto-save. */
@@ -113,19 +124,30 @@ export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductPatchInput = z.infer<typeof productPatchSchema>;
 
 /**
- * Coherence `sample_size` / `size_range` apres fusion avec la ligne existante.
+ * Inclusion d'ensemble `sample_sizes` dans `size_range`, apres fusion avec la
+ * ligne existante.
  *
  * Un PATCH peut ne toucher qu'a l'un des deux : la verification ne peut donc
  * pas vivre dans le schema Zod, qui ne voit que le corps de la requete.
- * Reproduit le CHECK `products_sample_size_in_range`.
+ * Reproduit le CHECK `products_sample_sizes_in_range` (`sample_sizes <@
+ * size_range`), tableau vide compris, qui est inclus dans n'importe quelle
+ * gamme.
+ *
+ * Le message NOMME les tailles fautives : sur un PATCH de `sizeRange` qui
+ * decocherait une taille encore utilisee comme echantillon, savoir laquelle est
+ * la seule information qui permet de corriger.
  */
-export function sampleSizeError(
+export function sampleSizesError(
   sizeRange: readonly string[],
-  sampleSize: string | null,
+  sampleSizes: readonly string[],
 ): string | null {
-  if (sampleSize === null) return null;
-  if (sizeRange.includes(sampleSize)) return null;
-  return `La taille de reference ${sampleSize} ne fait pas partie de la gamme (${sizeRange.join(', ')})`;
+  const outOfRange = sampleSizes.filter((size) => !sizeRange.includes(size));
+  if (outOfRange.length === 0) return null;
+  const subject =
+    outOfRange.length === 1
+      ? `La taille d echantillon ${outOfRange[0]} ne fait pas`
+      : `Les tailles d echantillon ${outOfRange.join(', ')} ne font pas`;
+  return `${subject} partie de la gamme (${sizeRange.join(', ')})`;
 }
 
 // ---------------------------------------------------------------------------

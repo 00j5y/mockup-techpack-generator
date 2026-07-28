@@ -1,5 +1,40 @@
 @import "tailwindcss";
 
+/*
+ * Myriad Pro Bold : la VRAIE police du template Seaggs.
+ *
+ * Le fichier n'est pas dans le depot (licence Adobe, fichier binaire lourd) :
+ * il est depose dans `assets/fonts/`, ignore par git, et servi a la meme origine
+ * par `/api/fonts/[...path]`. Voir `assets/fonts/README.md`.
+ *
+ * Bold seul pour l'instant : Jay n'a pas le Regular. Source Sans 3 reste charge
+ * par `next/font` dans `app/layout.tsx` et couvre tout le reste, ainsi que le
+ * repli si le fichier est absent.
+ *
+ * Le nom de famille `Myriad Pro` et la graisse 700 sont un contrat : le bandeau
+ * d'avertissement (`TechpackFontNotice.tsx`) retrouve CETTE face par sa famille
+ * et sa graisse, puis lit son `FontFace.status`. Ne pas renommer sans mettre les
+ * deux cotes a jour.
+ *
+ * Surtout, ne pas croire que `document.fonts.check('700 10pt "Myriad Pro"')`
+ * ferait l'affaire : mesure faite sur ce projet, il renvoie `true` MEME quand la
+ * route repond 404, une face en statut `error` comptant comme terminee selon la
+ * spec CSS Font Loading. Seul `FontFace.status` distingue `loaded` de `error`.
+ *
+ * `format('opentype')` et non `truetype` : le fichier porte l'extension `.ttf`
+ * mais c'est un sfnt `OTTO` a table `CFF`, donc un OpenType renomme.
+ *
+ * `swap` : sur un clone frais la route repond 404, le texte s'affiche
+ * immediatement en Source Sans 3 au lieu de rester invisible.
+ */
+@font-face {
+  font-family: 'Myriad Pro';
+  src: url('/api/fonts/MyriadPro-Bold.ttf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -15,6 +50,23 @@
   --tp-bar: #cccccc; /* fond de la barre de titre et du bloc header */
   --tp-red: #ff0000; /* TOUT ce que l'utilisateur renseigne */
   --tp-white: #ffffff; /* fond des zones de contenu, blanc pur, aucun filigrane */
+}
+
+/*
+ * LA pile de polices du projet, definie ICI et nulle part ailleurs.
+ *
+ * Posee sur `body` et non sur `:root` parce qu'elle reference
+ * `--font-source-sans`, que `next/font` pose via une classe sur le `<body>`
+ * (voir `app/layout.tsx`). Une custom property n'est heritee que vers le bas :
+ * lue sur `<html>`, `--font-source-sans` serait vide.
+ *
+ * `components/techpack/measureTextPt.ts` lit `--font-techpack` sur
+ * `document.body` pour mesurer le debordement de colonne du header. En y mettant
+ * la pile complete, la mesure a l'ecran utilise exactement la police qui sera
+ * imprimee : c'est tout l'interet de l'avertissement a la frappe.
+ */
+body {
+  --font-techpack: 'Myriad Pro', var(--font-source-sans), sans-serif;
 }
 
 @theme inline {
@@ -33,5 +85,6 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-techpack), system-ui, sans-serif;
+  /* La pile est deja complete dans `--font-techpack`, ne pas la reconstruire ici. */
+  font-family: var(--font-techpack);
 }

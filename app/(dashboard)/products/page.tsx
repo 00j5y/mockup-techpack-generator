@@ -5,6 +5,7 @@ import { formatUiDate } from '@/lib/format';
 import {
   PRODUCT_CATEGORIES,
   PRODUCT_STATUSES,
+  sortSizes,
   type ProductCategory,
   type ProductStatus,
 } from '@/types/product';
@@ -72,7 +73,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
               <th className="py-2 pr-4">Style</th>
               <th className="py-2 pr-4">Numero</th>
               <th className="py-2 pr-4">Categorie</th>
-              <th className="py-2 pr-4">Taille ref.</th>
+              <th className="py-2 pr-4">Tailles ech.</th>
               <th className="py-2 pr-4">Statut</th>
               <th className="py-2">Cree le</th>
             </tr>
@@ -88,8 +89,16 @@ export default async function ProductsPage({ searchParams }: { searchParams: Sea
                 </td>
                 <td className="py-2 pr-4 font-mono text-xs">{product.styleNumber}</td>
                 <td className="py-2 pr-4">{product.category}</td>
+                {/* Un produit peut avoir plusieurs tailles d echantillon (un
+                    sample en M et un en L). Le tableau vide est un brouillon
+                    legal, mais il bloque la generation du techpack : il se
+                    signale donc en rouge plutot que de rester une case vide. */}
                 <td className="py-2 pr-4">
-                  {product.sampleSize ?? <span className="text-red-600">a definir</span>}
+                  {product.sampleSizes.length > 0 ? (
+                    sortSizes(product.sampleSizes).join(', ')
+                  ) : (
+                    <span className="text-red-600">a definir</span>
+                  )}
                 </td>
                 <td className="py-2 pr-4">
                   <StatusBadge status={product.status} />

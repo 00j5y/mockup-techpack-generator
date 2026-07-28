@@ -22,7 +22,7 @@ La spec initiale prévoyait Supabase pour la base, le storage et l'auth. Jay a a
 
 ### Postgres et pas MySQL
 
-MySQL avait été évoqué. Écarté : le schéma utilise `text[]` (`size_range`, `input_flat_ids`), `check (sample_size = any(size_range))`, `uuid` + `gen_random_uuid()` et `timestamptz`. Aucun n'a d'équivalent direct en MySQL. La bascule aurait signifié réécrire toute la migration et perdre la contrainte qui rend l'incohérence Seaggs impossible, pour zéro gain.
+MySQL avait été évoqué. Écarté : le schéma utilise `text[]` (`size_range`, `sample_sizes`, `input_flat_ids`), `check (sample_sizes <@ size_range)`, `uuid` + `gen_random_uuid()` et `timestamptz`. Aucun n'a d'équivalent direct en MySQL. La bascule aurait signifié réécrire toute la migration et perdre la contrainte qui rend l'incohérence Seaggs impossible, pour zéro gain.
 
 ### Postgres et pas Firestore
 

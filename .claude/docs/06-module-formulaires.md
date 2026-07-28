@@ -33,7 +33,7 @@ Composition d'une cellule, telle que rendue dans le techpack :
 
 - **Lettre en rouge**, bold, petit corps, en haut à gauche
 - Image centrée dans la moitié haute
-- Texte **en noir** (attention : c'est la seule zone où le contenu utilisateur n'est pas rouge), centré, petit corps, sous l'image
+- Texte **en noir** (attention : avec les valeurs du bloc header, c'est l'une des seules zones où le contenu utilisateur n'est pas rouge), centré, petit corps, sous l'image
   - cas swatch de tissu : titre puis Pantone sur deux lignes centrées
   - cas description : texte sur plusieurs lignes
 - `measurement_note` rendu comme une **cote rouge** (crochet + libellé, ex `1 inch`) à côté de l'image

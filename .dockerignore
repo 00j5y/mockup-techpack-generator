@@ -6,6 +6,22 @@ node_modules
 .next
 .smoke
 
+# Myriad Pro Bold est sous licence Adobe : elle n'est ni versionnee, ni destinee
+# a entrer dans une couche d'image. Elle est montee en lecture seule depuis
+# l'hote par docker-compose (voir assets/fonts/README.md).
+#
+# L'exclure du CONTEXTE de build est necessaire, pas seulement propre : le
+# tracage de fichiers de Next remonte `assets/fonts` depuis le
+# `join(process.cwd(), 'assets', 'fonts')` de `app/api/fonts/[...path]/route.ts`
+# et la recopie dans `.next/standalone`, que le stage `runner` copie en entier.
+# Sans cette ligne, la police se retrouve donc bien dans l'image finale.
+assets/fonts
+
+# Meme mecanisme depuis `lib/storage` : les uploads locaux de Jay (logos, flats)
+# etaient embarques dans l'image via `.next/standalone/.storage`. Le stockage
+# reel est un volume, jamais une couche d'image.
+.storage
+
 # Secrets : injectes par docker-compose via env_file, jamais copies dans l'image.
 .env
 .env.*

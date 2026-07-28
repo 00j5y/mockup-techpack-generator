@@ -16,6 +16,10 @@
  *     bande du header, exactement ce qui avait ete recopie,
  *   - la couleur `#CCCCCC` (toutes casses) : le fond de la bande de header,
  *     expose par `TP_COLORS.bar`,
+ *   - la couleur `#231F20` (toutes casses) : l encre du header, exposee par
+ *     `TP_COLORS.frame` pour la structure et `TP_COLORS.value` pour les valeurs
+ *     saisies. Deux tokens de meme valeur, precisement pour pouvoir les separer
+ *     un jour : un litteral recopie annulerait cette possibilite,
  *   - dans n importe quel `.ts` / `.tsx` de `components/`, y compris dans les
  *     commentaires : un commentaire qui fige une valeur derive lui aussi.
  *
@@ -73,6 +77,15 @@ const HEADER_GEOMETRY_LITERALS: readonly GeometryLiteral[] = [
     literal: '#CCCCCC',
     source: 'TP_COLORS.bar',
     pattern: /#c{6}\b/gi,
+  },
+  {
+    // Ajoute avec le token `TP_COLORS.value` : l encre du header sert desormais
+    // a DEUX choses (les libelles et les valeurs saisies), et elle est ecrite
+    // dans les deux renderers. Recopier le litteral quelque part rendrait
+    // impossible de basculer les valeurs en `#000000` sans emporter les cadres.
+    literal: '#231F20',
+    source: 'TP_COLORS.frame (structure) ou TP_COLORS.value (valeurs saisies)',
+    pattern: /#231f20\b/gi,
   },
 ];
 
@@ -182,6 +195,15 @@ describe('regle 2 : le detecteur de geometrie recopiee est fonctionnel', () => {
   test('il signale le gris du header quelle que soit la casse', () => {
     expect(findHardcodedGeometry('faux.tsx', "background: '#cccccc',")).toHaveLength(1);
     expect(findHardcodedGeometry('faux.tsx', "background: '#CCCCCC',")).toHaveLength(1);
+  });
+
+  test('il signale l encre du header quelle que soit la casse', () => {
+    expect(findHardcodedGeometry('faux.tsx', "color: '#231f20',")).toHaveLength(1);
+    expect(findHardcodedGeometry('faux.tsx', "color: '#231F20',")).toHaveLength(1);
+  });
+
+  test('il ne signale pas la lecture du token d encre', () => {
+    expect(findHardcodedGeometry('faux.tsx', 'color: TP_COLORS.value,')).toEqual([]);
   });
 
   test('il donne le fichier, la ligne et la constante de remplacement', () => {

@@ -265,13 +265,13 @@ Manques constatés en confrontant le schéma au template Seaggs et à l'exemple 
 
 ```sql
 alter table products
-  add column logo_storage_path text,     -- slot logo du header, present sur les 12 pages
-  add column sample_size text;           -- taille de reference (encadree en rouge + colonne remplie page 3)
+  add column logo_storage_path text,                     -- slot logo du header, present sur les 12 pages
+  add column sample_sizes text[] not null default '{}';  -- tailles d'echantillon (encadrees en rouge + colonnes remplies page 3)
 ```
 
 Le header du template a un **slot logo** de 72 x 70 pt à gauche, rempli sur les 12 pages de l'exemple. Sans ce champ, le header est incomplet sur toutes les pages.
 
-`sample_size` pilote trois choses à la fois : l'encadré rouge du `SIZE RANGE:` dans le header, la colonne remplie de la page 3, et les valeurs affichées sur les cotes de la page 2. Un seul champ, trois usages, donc aucune incohérence possible (l'exemple Seaggs, lui, est incohérent sur ce point).
+`sample_sizes` pilote trois choses à la fois : les encadrés rouges du `SIZE RANGE:` dans le header (un par taille), les colonnes remplies de la page 3, et les valeurs affichées sur les cotes de la page 2 (portées par la première taille dans l'ordre canonique, voir `primarySampleSize()` dans `types/product.ts`). Un tableau plutôt qu'une valeur unique : on peut vouloir produire un sample en M et un en L. Le CHECK `products_sample_sizes_in_range` (`sample_sizes <@ size_range`, inclusion d'ensemble) garde l'incohérence de l'exemple Seaggs structurellement impossible. Tableau vide autorisé, c'est l'état brouillon : seule la génération du techpack exige au moins une taille.
 
 ### 2. `color_specs` : position des pins
 

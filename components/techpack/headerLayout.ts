@@ -67,12 +67,27 @@ export const COLUMNS = [
 /** yMin du texte de chaque ligne. Interligne ~24pt. */
 export const ROW_Y = [34, 58, 82] as const;
 
+/**
+ * Graisse commune aux libelles et aux valeurs du header.
+ *
+ * Le template est compose en Myriad Pro Bold : demande de Jay, une valeur saisie
+ * doit etre typographiquement indiscernable de son libelle. Les deux graisses
+ * restent nommees separement (elles ne designent pas la meme chose), mais elles
+ * partagent cette constante pour ne pas pouvoir diverger par accident.
+ *
+ * Consequence a ne pas perdre de vue : les valeurs sont plus larges qu'en 400,
+ * donc le seuil de debordement de colonne se declenche plus tot. C'est correct
+ * a condition que `measureTextPt` mesure bien avec `TYPO.valueWeight`, ce qui
+ * est son poids par defaut.
+ */
+const HEADER_TEXT_WEIGHT = 700;
+
 export const TYPO = {
   /** Corps des libelles et des valeurs du header. */
   fontSize: 10,
   lineHeight: 24,
-  labelWeight: 700,
-  valueWeight: 400,
+  labelWeight: HEADER_TEXT_WEIGHT,
+  valueWeight: HEADER_TEXT_WEIGHT,
   /** Espace entre la fin du libelle et le debut de la valeur. */
   labelGap: 3,
 } as const;
@@ -231,14 +246,17 @@ export const HEADER_TEXT_SLOTS: readonly HeaderTextSlot[] = TEXT_KEYS.map((key) 
  * Le template imprime une liste statique `XS S M L XL 2XL ______`. On rend a la
  * place le `size_range` reel du produit : hardcoder la liste casserait
  * silencieusement un produit dont la gamme differe (voir 12-pieges.md).
- * La taille de reference (`sample_size`) est encadree de rouge.
+ * CHAQUE taille d'echantillon (`sample_sizes`, un tableau) est encadree de
+ * rouge : on peut vouloir produire un sample en M et un en L. La geometrie ne
+ * change pas pour autant, c'est le meme rectangle repete autant de fois que
+ * necessaire.
  */
 export const SIZE_LIST = {
   /** Pas horizontal entre deux tailles. Estime. */
   step: 26,
   /** Largeur du libelle de taille le plus large (`2XL`). Estimee. */
   itemWidth: 18,
-  /** Encadre rouge de la taille de reference. Estime. */
+  /** Encadre rouge d'une taille d'echantillon. Estime. */
   box: { paddingX: 3, paddingY: 2, borderWidth: 1 },
 } as const;
 
@@ -268,5 +286,22 @@ export const TP_COLORS = {
   frame: '#231F20',
   bar: '#CCCCCC',
   red: '#FF0000',
+  /**
+   * Encre des valeurs saisies DANS LE HEADER.
+   *
+   * Demande de Jay : les valeurs du header sont en noir, comme les libelles, et
+   * non en rouge. La valeur est volontairement la meme que `frame`, pour que
+   * valeur et libelle soient reellement identiques a l'oeil.
+   *
+   * Token distinct et non un alias de `frame` : c'est le seul endroit a toucher
+   * pour passer les valeurs en `#000000` sans deteindre sur les cadres, les
+   * separateurs et les bordures de tableau du template.
+   *
+   * Ne concerne pas le reste du techpack : la regle dure numero 10 (contenu
+   * utilisateur en rouge) continue de s'appliquer aux cotes de la page 2, au
+   * tableau de la page 3 et au reste. Dans le header, l'encadre rouge de la
+   * liste des tailles reste rouge lui aussi.
+   */
+  value: '#231F20',
   white: '#FFFFFF',
 } as const;

@@ -15,9 +15,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/products" className="text-sm font-semibold tracking-tight">
             Constitue Studio
           </Link>
-          <nav className="text-sm">
+          <nav className="flex items-center gap-4 text-sm">
             <Link href="/products" className="text-neutral-600 hover:text-neutral-900">
               Produits
+            </Link>
+            <Link href="/pantones" className="text-neutral-600 hover:text-neutral-900">
+              Bibliotheque Pantone
             </Link>
           </nav>
         </div>

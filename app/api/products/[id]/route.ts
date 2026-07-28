@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getProduct } from '@/lib/db/queries';
+import { fabricPantoneError, getProduct } from '@/lib/db/queries';
 import { products } from '@/lib/db/schema';
 import { apiError, apiValidationError, readJson } from '@/lib/http';
 import { deleteDirectory } from '@/lib/storage';
-import { productPatchSchema, sampleSizeError } from '@/lib/validation/product';
+import { productPatchSchema, sampleSizesError } from '@/lib/validation/product';
 
 export const runtime = 'nodejs';
 
@@ -30,12 +30,17 @@ export async function PATCH(request: Request, { params }: Params) {
   const existing = await getProduct(id);
   if (!existing) return apiError('Produit introuvable', 404);
 
-  // `sample_size` et `size_range` sont lies par un CHECK en base, et un PATCH
-  // peut ne toucher qu'a l'un des deux. La verification a donc besoin de la
-  // ligne existante, ce que le schema Zod ne voit pas.
+  // `sample_sizes` et `size_range` sont lies par un CHECK d'inclusion en base,
+  // et un PATCH peut ne toucher qu'a l'un des deux. La verification a donc
+  // besoin de la ligne existante, ce que le schema Zod ne voit pas.
   const merged = { ...existing, ...parsed.data };
-  const conflict = sampleSizeError(merged.sizeRange, merged.sampleSize);
+  const conflict = sampleSizesError(merged.sizeRange, merged.sampleSizes);
   if (conflict) return apiError(conflict, 400);
+
+  // Meme raison : la cle etrangere vers `pantone_colors` echapperait au schema
+  // Zod, qui ne voit pas la base, et sortirait en 500 illisible.
+  const pantoneError = await fabricPantoneError(parsed.data.fabricPantoneId);
+  if (pantoneError) return apiError(pantoneError, 400);
 
   try {
     const [updated] = await db

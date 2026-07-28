@@ -6,7 +6,7 @@
  * simple lecture.
  */
 
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   artworkSpecs,
@@ -17,10 +17,19 @@ import {
   measurementPoints,
   measurementValues,
   packagingSpecs,
+  pantoneColors,
   productFlats,
   products,
 } from '@/lib/db/schema';
-import type { Product, ProductCategory, ProductFlat, ProductStatus } from '@/types/product';
+import { pantoneLabel } from '@/types/product';
+import type {
+  PantoneColor,
+  PantoneLibrary,
+  Product,
+  ProductCategory,
+  ProductFlat,
+  ProductStatus,
+} from '@/types/product';
 
 // ---------------------------------------------------------------------------
 // Liste
@@ -77,6 +86,190 @@ export async function getMostRecentLogoPath(): Promise<string | null> {
  */
 export async function touchProduct(productId: string): Promise<void> {
   await db.update(products).set({ updatedAt: new Date() }).where(eq(products.id, productId));
+}
+
+// ---------------------------------------------------------------------------
+// Bibliotheque Pantone
+// ---------------------------------------------------------------------------
+
+/**
+ * Bibliotheque complete, ou filtree par un terme de recherche.
+ *
+ * La recherche est insensible a la casse et porte sur `reference` ET `name` :
+ * Jay cherche indifferemment « 19-4052 » ou « classic blue ». Elle ne porte PAS
+ * sur `hex` ni sur `notes`, qui produiraient des correspondances fortuites
+ * (« 19 » dans un hex) sans jamais correspondre a une intention de recherche.
+ *
+ * Tri par `library` puis `reference` : les TCX du vetement se lisent d'un bloc,
+ * separes des `C` et `U` du print, qui ne se commandent pas de la meme facon.
+ * Le tri est lexicographique sur `reference`, ce qui convient au format FHI a
+ * chiffres constants (`19-4052`), et n'est qu'approximatif sur le PMS a nombre
+ * variable (`110` se classe avant `7545`, mais aussi avant `21`). Assume : le
+ * PMS n'a pas d'ordre numerique qui ait un sens metier ici.
+ */
+export async function listPantoneColors(search?: string): Promise<PantoneColor[]> {
+  const term = search?.trim();
+  // `ilike` avec des `%` de part et d'autre : recherche « contient », pas
+  // « commence par ». Chercher « 4052 » doit trouver « 19-4052 ».
+  const filter = term ? `%${term}%` : undefined;
+
+  return db
+    .select()
+    .from(pantoneColors)
+    .where(
+      filter
+        ? or(ilike(pantoneColors.reference, filter), ilike(pantoneColors.name, filter))
+        : undefined,
+    )
+    .orderBy(asc(pantoneColors.library), asc(pantoneColors.reference));
+}
+
+export async function getPantoneColor(id: string): Promise<PantoneColor | null> {
+  const [row] = await db
+    .select()
+    .from(pantoneColors)
+    .where(eq(pantoneColors.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Message d'erreur si la couleur de tissu soumise n'existe pas en bibliotheque.
+ *
+ * Rend `null` quand il n'y a rien a signaler : champ absent d'un PATCH partiel,
+ * `null` explicite (detacher la couleur), ou uuid existant.
+ *
+ * Cette verification ne PEUT PAS vivre dans le schema Zod, qui ne voit que le
+ * corps de la requete (le commentaire de `fabricPantoneId` dans
+ * `lib/validation/product.ts` le dit deja). Sans elle, un uuid inconnu passe la
+ * validation et remonte en violation de cle etrangere, donc en 500 illisible la
+ * ou il faut un 400 nommant le champ. Le format est le message d'`apiValidationError`
+ * (`champ : probleme`), pour que le client affiche les deux cas pareil.
+ */
+export async function fabricPantoneError(
+  fabricPantoneId: string | null | undefined,
+): Promise<string | null> {
+  if (!fabricPantoneId) return null;
+  const color = await getPantoneColor(fabricPantoneId);
+  return color ? null : 'fabricPantoneId : couleur absente de la bibliotheque Pantone';
+}
+
+/**
+ * Ligne portant deja ce couple `(reference, library)`, s'il y en a une.
+ *
+ * Sert au message d'erreur 409 : nommer la couleur en conflit, avec son nom
+ * commercial, est la seule information qui permet de comprendre pourquoi la
+ * creation est refusee. Ne remplace PAS la contrainte d'unicite, qui reste
+ * l'autorite : les routes attrapent la violation, et n'appellent ceci que pour
+ * rediger la reponse.
+ */
+export async function findPantoneByReference(
+  reference: string,
+  library: PantoneLibrary | string,
+): Promise<PantoneColor | null> {
+  const [row] = await db
+    .select()
+    .from(pantoneColors)
+    .where(and(eq(pantoneColors.reference, reference), eq(pantoneColors.library, library)))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Nombre de produits qui referencent cette couleur.
+ *
+ * Affiche dans la confirmation de suppression. La suppression n'est pas
+ * bloquante (`on delete set null` detache les produits sans les supprimer),
+ * mais « Etes-vous sur ? » ne dit pas qu'on s'apprete a vider la couleur de
+ * tissu de 4 produits : il faut le chiffre.
+ */
+export async function getPantoneUsage(id: string): Promise<number> {
+  // `::int` obligatoire : sans lui `count(*)` sort en `bigint`, que postgres.js
+  // remonte en chaine de caracteres.
+  const [row] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(products)
+    .where(eq(products.fabricPantoneId, id));
+  return row?.total ?? 0;
+}
+
+/**
+ * Nombre de produits par couleur, pour toute la bibliotheque.
+ *
+ * Meme information que `getPantoneUsage()`, mais en une seule requete : l'ecran
+ * de gestion a besoin du chiffre sur CHAQUE ligne, et il en a besoin AVANT la
+ * suppression, pour l'annoncer. L'appeler couleur par couleur ferait un N+1 la
+ * ou un `group by` suffit.
+ *
+ * Les couleurs qu'aucun produit ne reference sont absentes du resultat : c'est
+ * a l'appelant de lire un manque comme un zero.
+ */
+export async function listPantoneUsage(): Promise<Record<string, number>> {
+  // `::int` obligatoire : sans lui `count(*)` sort en `bigint`, que postgres.js
+  // remonte en chaine de caracteres.
+  const rows = await db
+    .select({ colorId: products.fabricPantoneId, total: sql<number>`count(*)::int` })
+    .from(products)
+    .where(isNotNull(products.fabricPantoneId))
+    .groupBy(products.fabricPantoneId);
+
+  const usage: Record<string, number> = {};
+  for (const row of rows) {
+    // `isNotNull` a deja ecarte le cas, mais la colonne reste nullable pour
+    // TypeScript : le garder explicite evite un cast non justifie.
+    if (row.colorId !== null) usage[row.colorId] = row.total;
+  }
+  return usage;
+}
+
+/**
+ * Message du 409 sur violation de l'unicite `(reference, library)`.
+ *
+ * Relit la ligne en conflit pour pouvoir la NOMMER : « Pantone 19-4052 TCX
+ * Classic Blue » dit tout de suite de quelle couleur il s'agit, la seule
+ * information qui permette de choisir entre corriger la saisie et reutiliser la
+ * couleur existante. Le repli sans nom couvre le cas de course ou la ligne aurait
+ * disparu entre l'echec de l'ecriture et cette relecture.
+ */
+export async function pantoneConflictMessage(
+  reference: string,
+  library: PantoneLibrary | string,
+): Promise<string> {
+  const existing = await findPantoneByReference(reference, library);
+  const label = existing
+    ? pantoneLabel(existing)
+    : `Pantone ${reference} ${library}`;
+  return `${label} est deja dans la bibliotheque`;
+}
+
+/**
+ * Violation d'une contrainte d'unicite Postgres (SQLSTATE 23505).
+ *
+ * Permet de repondre 409 avec un message lisible la ou l'erreur brute
+ * produirait un 500 et un pave SQL. Le nom de contrainte est verifie par
+ * l'appelant quand plusieurs contraintes coexistent sur la table.
+ *
+ * LA CHAINE DE `cause` EST OBLIGATOIRE. Drizzle n'expose pas l'erreur du
+ * pilote : il l'emballe dans une `DrizzleQueryError` qui porte la requete et
+ * les parametres, et range la `PostgresError` d'origine dans `cause`. Le
+ * `code` et le `constraint_name` ne sont donc JAMAIS sur l'objet de premier
+ * niveau. Une premiere version testait l'objet recu directement : elle rendait
+ * toujours `false`, et le 409 de la bibliotheque Pantone sortait en 500 avec le
+ * SQL complet. Verifie par la recette API (points 24 et 28 de
+ * `scripts/api-check.sh`), invisible autrement.
+ */
+export function isUniqueViolation(error: unknown, constraint?: string): boolean {
+  let candidate: unknown = error;
+  // Profondeur bornee : une chaine de `cause` cyclique ne doit pas boucler.
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof candidate !== 'object' || candidate === null) return false;
+    const row = candidate as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+    if (row.code === '23505') {
+      return constraint === undefined || row.constraint_name === constraint;
+    }
+    candidate = row.cause;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +469,9 @@ export function techpackBlockers(
 ): string[] {
   const blockers: string[] = [];
   if (!product.logoStoragePath) blockers.push('aucun logo depose');
-  if (!product.sampleSize) blockers.push('taille de reference non definie');
+  // Le tableau vide est valide en base (brouillon) : c'est ici, et seulement
+  // ici, qu'au moins une taille d echantillon devient obligatoire.
+  if (product.sampleSizes.length === 0) blockers.push('aucune taille d echantillon definie');
   if (!completion.flats.hasFront) blockers.push('aucun flat FRONT');
   if (!completion.flats.hasBack) blockers.push('aucun flat BACK');
   if (completion.measurements.points === 0) blockers.push('aucun point de mesure');

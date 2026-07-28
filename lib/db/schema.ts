@@ -33,6 +33,57 @@ const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull(
 const percent = (name: string) => numeric(name, { mode: 'number' });
 
 // ---------------------------------------------------------------------------
+// pantone_colors : bibliotheque de couleurs de la marque
+// ---------------------------------------------------------------------------
+
+/**
+ * BIBLIOTHEQUE MAISON, PAS LE CATALOGUE PANTONE. Decision de Jay, 2026-07-28.
+ *
+ * Le catalogue officiel est sous licence : Adobe l'a retire de Creative Cloud
+ * fin 2022 pour cette raison, et il n'existe aucune API publique gratuite qui en
+ * donne le contenu complet. Les jeux de donnees non officiels qui circulent sont
+ * des copies d'IP, avec des hex de qualite inegale. Une marque de vetement
+ * utilise 20 a 60 couleurs sur l'ensemble de ses collections, pas 2000 : une
+ * bibliotheque alimentee au fil des validations fournisseur est plus juste, et
+ * sans question de licence. Table GLOBALE et non par produit : outil
+ * mono-utilisateur, c'est la bibliotheque de la marque.
+ *
+ * LE HEX N'EST JAMAIS LA SPECIFICATION. Une couleur Pantone est une teinture
+ * physique : le fournisseur teint sur la puce, pas sur notre `#0F4C81`. Le hex
+ * ne sert qu'a l'affichage ecran, au rendu PDF et au prompt de generation
+ * d'image de la Phase 5. La REFERENCE est ce qui fait foi.
+ *
+ * `library` distingue les deux familles, et la distinction n'est pas cosmetique.
+ * Pour du vetement la bibliotheque pertinente est FHI TCX (coton, reference du
+ * type `19-4052 TCX`), TPG etant son equivalent papier. `C` et `U` sont le PMS
+ * graphique, encre sur papier couche ou non couche : utiles pour un hangtag
+ * imprime, pas pour teindre un tissu. L'unicite porte donc sur le COUPLE
+ * (reference, library) : `7545 C` et `7545 U` sont deux couleurs differentes.
+ */
+export const pantoneColors = pgTable(
+  'pantone_colors',
+  {
+    id: id(),
+    /** Sans le suffixe de bibliotheque : "19-4052", "7545", "Black 6". */
+    reference: text('reference').notNull(),
+    library: text('library').notNull(),
+    /** "Classic Blue". Optionnel : toutes les references n'en portent pas. */
+    name: text('name'),
+    /** INDICATIF, pour l'affichage seul. Voir le commentaire de la table. */
+    hex: text('hex').notNull(),
+    /** Conditions de validation fournisseur, lab dip, ecart tolere... */
+    notes: text('notes'),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('pantone_colors_reference_library').on(t.reference, t.library),
+    check('pantone_colors_library', sql`${t.library} in ('TCX','TPG','C','U')`),
+    check('pantone_colors_hex', sql`${t.hex} ~ '^#[0-9A-Fa-f]{6}$'`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // products
 // ---------------------------------------------------------------------------
 
@@ -47,7 +98,20 @@ export const products = pgTable(
     description: text('description'),
     /** ex: "270 GSM yarn-dyed cotton interlock" */
     mainFabric: text('main_fabric').notNull(),
-    fabricColorHex: text('fabric_color_hex'),
+    /**
+     * Couleur du tissu principal, par REFERENCE a la bibliotheque.
+     *
+     * Remplace l'ancienne colonne `fabric_color_hex`, supprimee. Decision de
+     * Jay : garder un hex libre a cote d'une reference creerait deux sources
+     * pour une meme couleur, qui divergeraient au premier changement. Le hex
+     * vit sur la ligne Pantone, et lui seul.
+     *
+     * `set null` et non `cascade` : supprimer une couleur de la bibliotheque
+     * doit detacher le produit, jamais le supprimer.
+     */
+    fabricPantoneId: uuid('fabric_pantone_id').references(() => pantoneColors.id, {
+      onDelete: 'set null',
+    }),
     fabricGradientEnabled: boolean('fabric_gradient_enabled').notNull().default(false),
     fabricGradientIntensity: text('fabric_gradient_intensity'),
     /**
@@ -61,12 +125,26 @@ export const products = pgTable(
       .notNull()
       .default(sql`ARRAY['XS','S','M','L','XL','2XL']::text[]`),
     /**
-     * Taille de reference. Pilote trois rendus a la fois : l'encadre rouge du
-     * header, la colonne remplie page 3, et les valeurs des cotes page 2.
-     * Nullable pour permettre les brouillons, obligatoire dans le formulaire,
-     * bloquant pour la generation du techpack.
+     * Tailles d'echantillon. Pilotent trois rendus a la fois : les encadres
+     * rouges du header, les colonnes remplies page 3, et les valeurs des cotes
+     * page 2.
+     *
+     * ORDRE CANONIQUE, convention a ne pas contourner : le tableau est trie
+     * selon `TECHPACK_SIZE_COLUMNS` (`types/product.ts`, XS -> 6XL) et
+     * dedoublonne a l'ecriture. Son PREMIER element est la taille dont les
+     * valeurs s'affichent sur les cotes de la page 2, qui ne peut en montrer
+     * qu'une par mesure sans devenir illisible. Lire cette taille via
+     * `primarySampleSize()` plutot que `sampleSizes[0]` en dur. Trier a
+     * l'ecriture et pas a l'affichage garantit que deux produits portant les
+     * memes tailles produisent le meme techpack, quel que soit l'ordre de saisie.
+     *
+     * Tableau vide autorise pour permettre les brouillons : c'est la generation
+     * du techpack qui exige au moins une taille, pas la base.
      */
-    sampleSize: text('sample_size'),
+    sampleSizes: text('sample_sizes')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     designer: text('designer').notNull().default('Constitue'),
     company: text('company').notNull().default('Constitue'),
     /** Slot logo du header, present sur les 12 pages. PNG transparent ou SVG. */
@@ -83,11 +161,14 @@ export const products = pgTable(
       sql`${t.fabricGradientIntensity} is null or ${t.fabricGradientIntensity} in ('subtle','medium','strong')`,
     ),
     // Rend structurellement impossible l'incoherence de l'exemple Seaggs
-    // (encadre rouge sur XL, colonne remplie sur L).
-    check(
-      'products_sample_size_in_range',
-      sql`${t.sampleSize} is null or ${t.sampleSize} = any(${t.sizeRange})`,
-    ),
+    // (encadre rouge sur XL, colonne remplie sur L). `<@` teste l'inclusion
+    // d'ensemble : toute taille d'echantillon appartient a la gamme. Un tableau
+    // vide est inclus dans n'importe quel ensemble, donc accepte.
+    check('products_sample_sizes_in_range', sql`${t.sampleSizes} <@ ${t.sizeRange}`),
+    // Postgres n'indexe pas les cles etrangeres. `getPantoneUsage()` compte les
+    // produits par couleur avant chaque suppression de la bibliotheque, et le
+    // `on delete set null` fait de meme un balayage a chaque suppression.
+    index('products_fabric_pantone_idx').on(t.fabricPantoneId),
   ],
 );
 

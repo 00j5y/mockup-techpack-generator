@@ -1,17 +1,18 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
-  AutoSaveColor,
   AutoSaveNumber,
   AutoSaveSelect,
   AutoSaveSizeRange,
   AutoSaveToggle,
 } from '@/components/forms/AutoSaveFields';
 import { DeleteProductButton } from '@/components/forms/DeleteProductButton';
+import { FabricPantoneField } from '@/components/forms/FabricPantoneField';
 import { FlatsManager } from '@/components/forms/FlatsManager';
 import { TechpackHeaderEditor } from '@/components/techpack/TechpackHeaderEditor';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import {
+  getPantoneColor,
   getProduct,
   getProductCompletion,
   listFlatsWithImpact,
@@ -45,9 +46,12 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const product = await getProduct(id);
   if (!product) notFound();
 
-  const [flats, completion] = await Promise.all([
+  const [flats, completion, fabricPantone] = await Promise.all([
     listFlatsWithImpact(id),
     getProductCompletion(product),
+    // Couleur de tissu par REFERENCE : la ligne Pantone porte le libelle et le
+    // hex, le produit ne stocke que l'identifiant. Une seule source.
+    product.fabricPantoneId ? getPantoneColor(product.fabricPantoneId) : null,
   ]);
   const blockers = techpackBlockers(product, completion);
   const url = `/api/products/${id}`;
@@ -117,13 +121,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             initial={oneOf(PRODUCT_STATUSES, product.status, 'draft')}
             options={PRODUCT_STATUSES.map((value) => ({ value, label: value }))}
           />
-          <AutoSaveColor
-            url={url}
-            field="fabricColorHex"
-            label="Couleur du tissu"
-            initial={product.fabricColorHex}
-            hint="Alimente le prompt du visuel IA (Phase 5)."
-          />
+          <FabricPantoneField url={url} initial={fabricPantone} />
           <AutoSaveToggle
             url={url}
             field="fabricGradientEnabled"
@@ -144,7 +142,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
               url={url}
               label="Gamme de tailles"
               initial={[...product.sizeRange]}
-              sampleSize={product.sampleSize}
+              sampleSizes={product.sampleSizes}
               options={TECHPACK_SIZE_COLUMNS}
             />
           </div>

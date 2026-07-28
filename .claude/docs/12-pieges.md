@@ -37,7 +37,10 @@ Corollaire : les emplacements sont en **nombre fixe** (17 mesures, 12 callouts, 
 
 ### Code couleur
 
-Tout ce que l'utilisateur renseigne est **rouge `#FF0000`**, toute la structure est en `#231F20` ou `#CCCCCC`. **Sauf le texte des cellules BOM, qui est noir.** Cette exception est facile à rater : elle se voit immédiatement en comparant à `exemple-p-04.jpg`.
+Tout ce que l'utilisateur renseigne est **rouge `#FF0000`**, toute la structure est en `#231F20` ou `#CCCCCC`. Deux exceptions :
+
+- **Le texte des cellules BOM, qui est noir.** Facile à rater : ça se voit immédiatement en comparant à `exemple-p-04.jpg`.
+- **Les valeurs du bloc header** (company, designer, date, main fabric...), en noir bold depuis le 2026-07-28 (`TP_COLORS.value`, décision de Jay). L'encadré rouge de `SIZE RANGE:` dans le header, lui, reste rouge : seul le texte a changé de couleur. Cette exception ne s'étend **pas** au reste du techpack (pages 2 à 12), qui n'est pas encore construit et reste sous la règle du rouge tant que Jay n'a pas tranché autrement. Voir la règle dure n°10 de `CLAUDE.md`.
 
 ### Style des cotes
 
@@ -51,9 +54,14 @@ Piège de lecture : ce gris représente 33 % des pixels du template vierge. En a
 
 ### Polices
 
-Le template utilise **Myriad Pro**, disponible sur la machine de Jay uniquement via le cache obfusqué Adobe Fonts, et dont la licence ne couvre pas l'installation sur un serveur. Substitut retenu : **Source Sans 3**.
+Le template utilise **Myriad Pro**. Depuis le 2026-07-28, Jay dispose d'un vrai fichier `~/Library/Fonts/Myriad Pro Bold.ttf` (vérifié : Adobe authentique, 839 glyphes, version 2.007, table `CFF`), mais **en Bold seulement**, pas de Regular. **Source Sans 3** reste chargée pour tout le reste et sert de repli si le fichier Bold manque. Le fichier n'est **pas versionné** (binaire lourd, licence Adobe qui ne couvre pas la redistribution) : il vit dans `assets/fonts/`, ignoré par git, servi à la même origine par `/api/fonts/[...path]`, monté en lecture seule par `docker-compose.yml`. Volontairement pas de `next/font/local`, qui exigerait le fichier au build. Détail complet dans `15-template-seaggs.md` (section Typographie) et `assets/fonts/README.md`.
 
-Ne pas se contenter d'un fallback système : l'écart se verrait sur la barre de titre et le header, présents sur les 12 pages. Et Source Sans 3 n'étant pas métriquement compatible avec Myriad Pro, prévoir un ajustement de corps ou de `letter-spacing` sur ces zones. Détail dans `15-template-seaggs.md`.
+Ne pas se contenter d'un fallback système : l'écart se verrait sur la barre de titre et le header, présents sur les 12 pages. Et Source Sans 3 n'étant pas métriquement compatible avec Myriad Pro, prévoir un ajustement de corps ou de `letter-spacing` sur les zones qui restent en Source Sans 3.
+
+**Deux pièges de police mesurés :**
+
+- **`document.fonts.check()` ne détecte pas une police qui a échoué à charger.** `document.fonts.check('700 10pt "Myriad Pro"')` renvoie `true` même quand la route `/api/fonts/...` répond 404 : la spécification CSS Font Loading fait compter une face en statut `error` comme terminée, elle ne distingue pas « chargée » de « échouée ». Une première version du bandeau d'avertissement de l'éditeur de header reposait sur `check()` et ne se serait jamais déclenchée. Le signal fiable est le **statut de la `FontFace`** (`face.status === 'loaded'` contre `'error'`), lu après `document.fonts.ready`.
+- **`next/font` pose sa variable CSS via une classe sur `<body>`, et la spécificité de cette classe écrase une pile déclarée sur `body`.** La variable de `next/font` (`--font-source-sans`) et la pile complète du techpack (`--font-techpack: 'Myriad Pro', var(--font-source-sans), sans-serif`) doivent donc porter des noms différents : si elles portaient le même nom, la classe posée par `next/font` écraserait la pile assemblée et Myriad Pro disparaîtrait silencieusement du rendu.
 
 ### Artwork blanc sur fond blanc
 
@@ -61,7 +69,9 @@ Une impression blanche rendue sur le fond blanc de la page est **invisible**. L'
 
 ### Taille de référence
 
-`products.sample_size` pilote trois rendus : l'encadré rouge du `SIZE RANGE:` dans le header, la colonne remplie de la page 3, et les valeurs affichées sur les cotes de la page 2. Les faire dériver de trois sources différentes reproduirait l'incohérence de l'exemple Seaggs, où l'encadré est sur `XL` et les valeurs dans la colonne `L`.
+`products.sample_sizes` (un tableau, pas une valeur unique : on peut vouloir produire un sample en M et un en L) pilote trois rendus : les encadrés rouges du `SIZE RANGE:` dans le header (un par taille), les colonnes remplies de la page 3 (une par taille), et les valeurs affichées sur les cotes de la page 2. Les faire dériver de trois sources différentes reproduirait l'incohérence de l'exemple Seaggs, où l'encadré est sur `XL` et les valeurs dans la colonne `L`.
+
+Nuance introduite par le pluriel : la page 2 n'affiche qu'**une seule** valeur par cote, elle ne peut pas montrer plusieurs tailles sans devenir illisible. La convention retenue est que c'est la **première taille dans l'ordre canonique** (`XS S M L XL 2XL 3XL 4XL 5XL 6XL`, `TECHPACK_SIZE_COLUMNS`) qui porte ces valeurs, exposée par le helper `primarySampleSize()` (`types/product.ts`). Le tableau est trié et dédoublonné **à l'écriture**, jamais à l'affichage : c'est ce qui garantit que deux produits portant les mêmes tailles produisent le même techpack, quel que soit l'ordre de saisie.
 
 ## Coordonnées et canvas
 
@@ -160,6 +170,7 @@ Une police chargée depuis une CDN externe qui ne répond pas dans le conteneur 
 - **Une variable d'environnement vide n'est pas absente.** `STORAGE_DIR=` dans un `.env` donne une chaîne vide, que `??` laisse passer : le stockage se retrouve alors à la racine du projet. Utiliser `process.env.X?.trim() || defaut`. Ce bug est déjà arrivé en Phase 0.
 - **Un volume Docker nommé appartient à root si le point de montage n'existe pas dans l'image.** Le conteneur tourne en utilisateur non-root `nextjs`. Le volume `storage-data` monté sur `/app/storage` était créé par Docker avec le propriétaire root, donc le premier upload échouait en `EACCES: permission denied, mkdir '/app/storage/products'`. Le build passait, l'app répondait 200, seul un vrai upload révélait le problème. Correction : `RUN mkdir -p /app/storage && chown nextjs:nodejs /app/storage` dans l'étape `runner` du Dockerfile, avant `USER nextjs`. Docker reprend le propriétaire du dossier présent dans l'image au moment où il crée le volume. Point important : **un volume déjà créé garde son propriétaire d'origine**, il faut le supprimer (`docker compose down && docker volume rm <projet>_storage-data`) pour que le correctif prenne effet.
 - **drizzle-kit ne voit pas les variables chargées par Bun.** Il évalue `drizzle.config.ts` dans un sous-processus Node. D'où le `dotenv` explicite dans le fichier de config. Sans lui : `url: undefined`.
+- **Postgres ne convertit pas un `text` en `text[]` sans clause `USING` explicite.** Rencontré en passant `products.sample_size` (singulier) à `sample_sizes text[]` : drizzle-kit proposait un `RENAME COLUMN` suivi d'un `SET DATA TYPE text[]`, qui aurait échoué à l'application. Choisi à la place : `DROP COLUMN` puis `ADD COLUMN`, ce qui **perd les données de la colonne**. Sur une base portant des données réelles, il faut relever les valeurs avant la migration et les restaurer après.
 - **Ne jamais modifier la base à la main.** Toute évolution passe par `lib/db/schema.ts`, puis `bun run db:generate`, puis `bun run db:migrate`. Le SQL de `drizzle/` est généré et committé, jamais édité.
 
 ## Auto-save
